@@ -30,6 +30,7 @@ function initMap(){
  
 }
 window.initMap=initMap;
+window.gm_authFailure=()=>location.replace('/?google=unavailable');
 
 // 1回の経路検索に含める建物数。件数全体には上限を設けない。
 async function calculateWalkingRoute(origin, points, getTrip, progress) {

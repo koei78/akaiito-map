@@ -70,6 +70,18 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
                 self.assertIn("/static/mobile-map.js", google)
                 self.assertIn("/static/map-theme.css", google)
 
+        def test_google_map_requires_key_and_opens_when_configured(self):
+            from pathlib import Path
+            from unittest.mock import patch
+            client, _ = self.client("googleuser")
+            with patch.dict(os.environ, {"GOOGLE_MAPS_KEY_FILE": str(Path(_db_dir) / "missing-key.txt")}, clear=False):
+                self.assertIn("google=missing-key", client.get("/google").location)
+            key_file = Path(_db_dir) / "maps-key.txt"
+            key_file.write_text("test-key", encoding="utf-8")
+            with patch.dict(os.environ, {"GOOGLE_MAPS_KEY_FILE": str(key_file)}, clear=False), patch.object(app, "reserve_map_load", return_value=True):
+                self.assertIn("const googleAvailable = true", client.get("/").get_data(as_text=True))
+                self.assertIn("maps.googleapis.com", client.get("/google?map=satellite").get_data(as_text=True))
+
         def test_relative_configuration_uses_project_folder(self):
             from unittest.mock import patch
             from paths import ROOT, configured_path, imagery_executable

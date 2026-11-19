@@ -455,8 +455,7 @@ def outlines_geojson():
                     headers={"Content-Disposition": "attachment; filename=building_outlines.geojson"})
 
 
-@app.get("/google")
-def google_map():
+def google_maps_key():
     # 専用キーは Google 側で API・サイト・日次枠を制限済み。
     key_file = configured_path("GOOGLE_MAPS_KEY_FILE", data_dir() / "google_maps_key.txt")
     try:
@@ -465,8 +464,14 @@ def google_map():
         key = ""
     if not key and os.environ.get("GOOGLE_MAPS_QUOTA_VERIFIED") == "1":
         key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
+    return key
+
+
+@app.get("/google")
+def google_map():
+    key = google_maps_key()
     if not key:
-        return redirect("/?google=unavailable")
+        return redirect("/?google=missing-key")
     try:
         if not reserve_map_load():
             return redirect("/?google=limit")
@@ -479,7 +484,7 @@ def google_map():
 
 @app.get("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", google_available=bool(google_maps_key()))
 
 def start_ngrok(port):
     """同じポートが公開済みなら再利用し、なければ ngrok を起動する。"""

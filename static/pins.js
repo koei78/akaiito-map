@@ -13,7 +13,7 @@
 
   const tools = document.createElement('div');
   tools.id = 'pin-tools';
-  tools.innerHTML = '<div class="pin-head"><div><h2>保存したピン</h2><div id="pin-user"></div></div><button id="pin-toggle" type="button" aria-expanded="false" aria-label="ピン一覧を開く">一覧を見る</button></div><div class="pin-body"><input id="pin-search-desktop" type="search" placeholder="ピンを検索" aria-label="ピンを検索"><button id="pin-add">＋ ピンを追加</button><div class="pin-controls"><select id="pin-filter" aria-label="ピンの表示"><option value="mine">自分のピン</option><option value="all">共有ピンも表示</option></select><button id="pin-reload" title="ピンを更新" aria-label="ピンを更新">↻</button></div><div id="pin-count" aria-live="polite"></div><div id="pin-list"></div></div><form method="post" action="/logout"><button>ログアウト</button></form>';
+  tools.innerHTML = '<div class="pin-head"><div><h2>保存したピン</h2><div id="pin-user"></div></div><button id="pin-toggle" type="button" aria-expanded="false" aria-label="ピン一覧を開く">一覧を見る</button></div><div class="pin-body"><input id="pin-search-desktop" type="search" placeholder="ピンを検索" aria-label="ピンを検索"><button id="pin-add">＋ ピンを追加</button><div class="pin-controls"><select id="pin-filter" aria-label="ピンの表示"><option value="mine">自分のピン</option><option value="all">共有ピンも表示</option></select><button id="pin-reload" title="ピンを更新" aria-label="ピンを更新">↻</button></div><button id="pin-history-open" type="button">ピンの履歴を見る</button><div id="pin-count" aria-live="polite"></div><div id="pin-list"></div></div><form method="post" action="/logout"><button>ログアウト</button></form>';
   document.body.append(tools);
   const toggle=tools.querySelector('#pin-toggle');
   const mobile=window.matchMedia('(max-width:650px)');
@@ -29,6 +29,38 @@
   const editor = document.createElement('dialog'); editor.id='pin-editor';
   editor.innerHTML = '<h2 id="pin-heading">ピン</h2><p class="pin-subtitle">この場所の情報を記録します</p><form id="pin-form"><label>ピンの名前<input name="title" maxlength="100" required placeholder="例：確認したい建物"></label><label>メモ<textarea name="note" maxlength="2000" rows="4" placeholder="気づいたことを記録"></textarea></label><label class="share-label"><input type="checkbox" name="shared"> 他のログインユーザーに共有する</label><menu><button type="submit">保存する</button><button type="button" id="pin-history">変更履歴</button><button type="button" id="pin-delete">ピンを削除</button><button type="button" id="pin-cancel">閉じる</button></menu></form><div id="pin-events" hidden></div><p id="pin-error" role="alert"></p>';
   document.body.append(editor);
+  const historyDialog = document.createElement('dialog');
+  historyDialog.id = 'pin-history-dialog';
+  historyDialog.innerHTML = '<div class="history-head"><h2>ピンの履歴</h2><button id="pin-history-close" type="button" aria-label="履歴を閉じる">×</button></div><p class="history-description">追加・変更・削除したピンを確認できます。</p><div id="pin-history-list" aria-live="polite"></div>';
+  document.body.append(historyDialog);
+  historyDialog.querySelector('#pin-history-close').onclick = () => historyDialog.close();
+  tools.querySelector('#pin-history-open').onclick = async () => {
+    const list = historyDialog.querySelector('#pin-history-list');
+    list.textContent = '読み込み中…';
+    historyDialog.showModal();
+    try {
+      const response = await fetch('/api/pins/history');
+      if (!response.ok) throw new Error('history request failed');
+      const rows = await response.json();
+      list.replaceChildren();
+      if (!rows.length) {list.innerHTML = '<p class="history-empty">まだピンの履歴がありません。</p>';return;}
+      const labels = {created:'追加',updated:'更新',deleted:'削除'};
+      for (const row of rows) {
+        const item = document.createElement(row.deleted_at ? 'div' : 'button');
+        item.className = 'history-item';
+        if (!row.deleted_at) {
+          item.type = 'button';
+          item.onclick = () => {historyDialog.close();window.dispatchEvent(new CustomEvent('open-saved-pin',{detail:row.pin_id}));};
+        }
+        const heading = document.createElement('strong');
+        heading.textContent = `${labels[row.action] || row.action} · ${row.title}`;
+        const details = document.createElement('small');
+        details.textContent = `${row.recorded_at} UTC${row.deleted_at ? ' · 削除済み' : ''}`;
+        item.append(heading, details);
+        list.append(item);
+      }
+    } catch (_) {list.textContent = '履歴を取得できませんでした。';}
+  };
   let allPins=[], layers=[], activePin=null, position=null, adding=false;
   const error = editor.querySelector('#pin-error');
   const isGoogle = () => location.pathname === '/google';

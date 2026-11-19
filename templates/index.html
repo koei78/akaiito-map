@@ -24,8 +24,21 @@
 <label for="imagery" class="eyebrow">航空写真</label><select id="imagery" class="layer-select" aria-label="航空写真の種類"><option value="esri">Esriの航空写真</option><option value="gsi">国土地理院の航空写真</option><option value="google">Google航空写真</option><option value="google-map">Googleマップ</option></select><label class="year-control" for="years">比較時期 <input id="years" type="range" min="1" max="40" value="15"><output id="years-value">15年前</output></label><label>AI設定 <select id="ai-level"><option value="medium">使用量を抑える</option><option value="high">高精度（使用量多め）</option></select></label><div class="actions"><button id="draw">✎　自由に囲む</button><button id="start" disabled>比較する　→</button></div><div class="status" id="status" role="status">地図上で範囲を選択してください。</div><div class="legend"><i></i>赤い外周は新築の可能性が高い建物です。</div><span id="downloads" hidden><a href="/vertices.csv">頂点CSV</a> <a href="/outlines.geojson">外周GeoJSON</a></span></div></aside>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
+const googleAvailable = {{ google_available|tojson }};
 const googleState = new URLSearchParams(location.search).get('google');
-if (googleState) document.getElementById('status').textContent = googleState === 'limit' ? 'Google航空写真は今月のアプリ上限に達したため無料の航空写真を表示しています。' : 'Google側の安全設定を確認できないため無料の航空写真を表示しています。';
+function showMapNotice(text) {
+  let notice = document.getElementById('map-notice');
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'map-notice';
+    notice.setAttribute('role', 'alert');
+    notice.innerHTML = '<span></span><button type="button" aria-label="通知を閉じる">×</button>';
+    notice.querySelector('button').onclick = () => notice.remove();
+    document.body.append(notice);
+  }
+  notice.querySelector('span').textContent = text;
+}
+if (googleState) showMapNotice(googleState === 'limit' ? 'Google航空写真は今月の表示上限に達しました。' : googleState === 'missing-key' ? 'Google航空写真の表示には Maps JavaScript API キーの設定が必要です。' : 'Google航空写真を読み込めませんでした。API キーの設定を確認してください。');
 let savedView;try{savedView=JSON.parse(sessionStorage.getItem('aerial_view'));}catch(e){}
 const validView=savedView&&Number.isFinite(savedView.lat)&&Number.isFinite(savedView.lng)&&Number.isFinite(savedView.zoom);
 const map=L.map('map',{zoomControl:false}).setView(validView?[savedView.lat,savedView.lng]:[35.506600,137.816433333],validView?savedView.zoom:18);
@@ -36,7 +49,7 @@ const imageryLayers={
  gsi:L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',{minNativeZoom:14,maxNativeZoom:18,maxZoom:22,attribution:'航空写真：<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a> | 建物：国土地理院 地理院地図Vector'})
 };
 let selectedLayer=imageryLayers.esri.addTo(map);
-document.getElementById('imagery').onchange=e=>{if(e.target.value==='google'||e.target.value==='google-map'){const c=map.getCenter();sessionStorage.setItem('aerial_view',JSON.stringify({lat:c.lat,lng:c.lng,zoom:map.getZoom()}));location.href='/google?map='+ (e.target.value==='google-map'?'roadmap':'satellite');return;}map.removeLayer(selectedLayer);selectedLayer=imageryLayers[e.target.value].addTo(map);document.getElementById('photo-date').textContent=(e.target.value==='gsi'?'国土地理院':'Esri')+'（撮影日は場所により異なり特定できません）';};
+document.getElementById('imagery').onchange=e=>{if(e.target.value==='google'||e.target.value==='google-map'){if(!googleAvailable){e.target.value=selectedLayer===imageryLayers.gsi?'gsi':'esri';showMapNotice('Google航空写真の表示には Maps JavaScript API キーの設定が必要です。');return;}const c=map.getCenter();sessionStorage.setItem('aerial_view',JSON.stringify({lat:c.lat,lng:c.lng,zoom:map.getZoom()}));location.href='/google?map='+ (e.target.value==='google-map'?'roadmap':'satellite');return;}map.removeLayer(selectedLayer);selectedLayer=imageryLayers[e.target.value].addTo(map);document.getElementById('photo-date').textContent=(e.target.value==='gsi'?'国土地理院':'Esri')+'（撮影日は場所により異なり特定できません）';};
 if(new URLSearchParams(location.search).get('layer')==='gsi'){document.getElementById('imagery').value='gsi';document.getElementById('imagery').dispatchEvent(new Event('change'));}
 const shapes=new L.FeatureGroup().addTo(map), pins=new L.FeatureGroup().addTo(map);
 const button=document.getElementById('start'), message=document.getElementById('status'), draw=document.getElementById('draw');
