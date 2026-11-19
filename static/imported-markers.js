@@ -16,12 +16,19 @@
   mobileButton.innerHTML = '<span class="imported-rail-symbol" aria-hidden="true">●</span><span>既存</span>';
   rail?.querySelector('#rail-pins')?.after(mobileButton);
 
+  const controls = document.createElement('div');
+  controls.id = 'imported-map-controls';
+  controls.hidden = true;
+  controls.innerHTML = '<div class="imported-mode-switch" role="group" aria-label="既存マーカーの表示方法"><button type="button" data-mode="density" aria-pressed="true">分布</button><button type="button" data-mode="pins" aria-pressed="false">個別ピン</button></div><div class="imported-density-legend"><strong>既存ピンの分布</strong><span><i class="density-zero"></i>0</span><span><i class="density-low"></i>1–4</span><span><i class="density-medium"></i>5–19</span><span><i class="density-high"></i>20–99</span><span><i class="density-hot"></i>100件以上</span></div>';
+  document.body.append(controls);
+  const legend = controls.querySelector('.imported-density-legend');
+
   const labels = {markers: 'マーカー', existing_customers: '既存顧客', parking_spots: '駐車場'};
   const types = {ng: 'NG', star: 'スター', heart: 'ハート', want_to_go: '行きたい', existing_customer: '既存顧客'};
   const colors = {ng: '#697883', star: '#e8a524', heart: '#e56685', want_to_go: '#25a68d', existing_customer: '#4d86df', parking_spots: '#815bc7'};
   const colorFor = item => colors[item.details?.marker_type] || colors[item.layer] || '#396b9d';
   const googleView = location.pathname === '/google';
-  let enabled = false, layers = [], controller = null, timer = null, currentMap = null;
+  let enabled = false, mode = 'density', layers = [], controller = null, timer = null, currentMap = null;
 
   function clearLayers() {
     for (const layer of layers) googleView ? layer.setMap(null) : currentMap.removeLayer(layer);
@@ -82,6 +89,50 @@
         .addTo(currentMap).on('click', zoomIn));
     }
   }
+  function densityColor(count) {
+    if (count === 0) return '#4c94d0';
+    if (count < 5) return '#69bb7c';
+    if (count < 20) return '#f2d150';
+    if (count < 100) return '#ef963f';
+    return '#d84545';
+  }
+  function addDensityCell(south, west, north, east, count) {
+    const center = {lat: (south + north) / 2, lng: (west + east) / 2};
+    const color = densityColor(count);
+    const opacity = count ? 0.43 : 0.17;
+    const title = `${count.toLocaleString()}件`;
+    const zoomIn = () => {
+      if (googleView) {
+        currentMap.setCenter(center);
+        currentMap.setZoom(Math.min((currentMap.getZoom() || 10) + 2, 21));
+      } else currentMap.setView([center.lat, center.lng], Math.min(currentMap.getZoom() + 2, 21));
+    };
+    if (googleView) {
+      const polygon = new google.maps.Polygon({map: currentMap,
+        paths: [{lat: south, lng: west}, {lat: south, lng: east}, {lat: north, lng: east}, {lat: north, lng: west}],
+        fillColor: color, fillOpacity: opacity, strokeColor: color, strokeOpacity: 0.48, strokeWeight: 1,
+        zIndex: 2});
+      polygon.addListener('click', zoomIn);
+      layers.push(polygon);
+    } else {
+      const rectangle = L.rectangle([[south, west], [north, east]], {
+        color, weight: 1, opacity: 0.48, fillColor: color, fillOpacity: opacity,
+      }).addTo(currentMap).bindTooltip(title);
+      rectangle.on('click', zoomIn);
+      layers.push(rectangle);
+    }
+  }
+  function drawDensity(grid) {
+    const height = (grid.north - grid.south) / grid.rows;
+    const width = (grid.east - grid.west) / grid.columns;
+    for (let y = 0; y < grid.rows; y++) {
+      for (let x = 0; x < grid.columns; x++) {
+        const south = grid.south + y * height, west = grid.west + x * width;
+        addDensityCell(south, west, south + height, west + width,
+          grid.counts[y * grid.columns + x]);
+      }
+    }
+  }
   function bounds() {
     const view = currentMap.getBounds();
     if (!view) return null;
@@ -99,7 +150,7 @@
     if (!box) return;
     controller?.abort();
     const active = controller = new AbortController();
-    const query = new URLSearchParams(box);
+    const query = new URLSearchParams({...box, ...(mode === 'density' ? {mode: 'density'} : {})});
     status.textContent = '表示範囲を読み込み中…';
     try {
       const response = await fetch(`/api/imported-markers?${query}`, {signal: active.signal});
@@ -111,10 +162,15 @@
         status.textContent = '既存マーカーデータが未登録です';
         return;
       }
-      for (const item of data.items) data.mode === 'points' ? addPoint(item) : addCluster(item);
-      status.textContent = data.mode === 'clusters'
-        ? `${data.count.toLocaleString()}件。拡大すると個別表示します`
-        : `${data.count.toLocaleString()}件を表示`;
+      if (data.mode === 'density') {
+        drawDensity(data.grid);
+        status.textContent = `この範囲に${data.count.toLocaleString()}件。色は区画内の件数です`;
+      } else {
+        for (const item of data.items) data.mode === 'points' ? addPoint(item) : addCluster(item);
+        status.textContent = data.mode === 'clusters'
+          ? `${data.count.toLocaleString()}件。拡大すると個別表示します`
+          : `${data.count.toLocaleString()}件を表示`;
+      }
     } catch (error) {
       if (error.name !== 'AbortError') status.textContent = error.message;
     }
@@ -125,12 +181,32 @@
   }
   function toggle() {
     enabled = !enabled;
+    if (enabled) mode = 'density';
     button.setAttribute('aria-pressed', String(enabled));
     mobileButton.setAttribute('aria-pressed', String(enabled));
     button.textContent = enabled ? '既存マーカーを隠す' : '既存マーカーを表示';
     mobileButton.setAttribute('aria-label', button.textContent);
+    controls.hidden = !enabled;
+    syncModeControls();
     if (enabled) schedule();
-    else {controller?.abort(); clearTimeout(timer); clearLayers(); status.textContent = '';}
+    else {controller?.abort(); controller = null; clearTimeout(timer); clearLayers(); status.textContent = '';}
+  }
+  function syncModeControls() {
+    for (const choice of controls.querySelectorAll('[data-mode]')) {
+      choice.setAttribute('aria-pressed', String(choice.dataset.mode === mode));
+    }
+    legend.hidden = mode !== 'density';
+  }
+  for (const choice of controls.querySelectorAll('[data-mode]')) {
+    choice.onclick = () => {
+      if (mode === choice.dataset.mode) return;
+      mode = choice.dataset.mode;
+      syncModeControls();
+      controller?.abort();
+      controller = null;
+      clearLayers();
+      schedule();
+    };
   }
   button.onclick = toggle;
   mobileButton.onclick = toggle;
@@ -140,5 +216,6 @@
     currentMap = map;
     if (googleView) map.addListener('idle', schedule);
     else map.on('moveend zoomend', schedule);
+    if (enabled) schedule();
   }, 300);
 })();

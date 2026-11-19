@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 BASE = Path(__file__).resolve().parent
-PORT = int(os.environ.get("PORT", "5000"))
+PORT = int(os.environ.get("PORT", "5001"))
 
 
 def running():

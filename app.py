@@ -160,7 +160,10 @@ def imported_markers_viewport():
             raise ValueError()
     except (KeyError, TypeError, ValueError):
         return jsonify(error="地図の表示範囲を確認してください。"), 400
-    return jsonify(imported_markers.query((south, west, north, east)))
+    bounds = (south, west, north, east)
+    if request.args.get("mode") == "density":
+        return jsonify(imported_markers.density(bounds))
+    return jsonify(imported_markers.query(bounds))
 
 
 @app.get("/api/pins/history")
@@ -601,7 +604,7 @@ def start_ngrok(port):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5000"))
+    port = int(os.environ.get("PORT", "5001"))
     restore = os.environ.get("AERIAL_RESTORE_SESSION")
     if restore:
         try:

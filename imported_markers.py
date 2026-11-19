@@ -4,8 +4,9 @@ import json
 import math
 import sqlite3
 from pathlib import Path
+from paths import data_dir
 
-DEFAULT_DB = Path(__file__).resolve().parent / "imported_markers.sqlite3"
+DEFAULT_DB = data_dir() / "imported_markers.sqlite3"
 LAYERS = ("markers", "existing_customers", "parking_spots")
 
 
@@ -92,3 +93,34 @@ def query(bounds, db=DEFAULT_DB, point_limit=300):
         return {"mode": "clusters", "count": count, "items": [dict(row) for row in rows]}
     finally:
         connection.close()
+
+
+def density(bounds, db=DEFAULT_DB, cells=12):
+    """Count visible markers in a small fixed grid, including empty cells."""
+    south, west, north, east = bounds
+    if not Path(db).is_file():
+        return {"mode": "missing", "count": 0, "grid": None}
+    step_lat = (north - south) / cells
+    step_lng = (east - west) / cells
+    connection = sqlite3.connect(f"file:{Path(db).resolve().as_posix()}?mode=ro", uri=True)
+    try:
+        rows = connection.execute(
+            "SELECT min(?, max(0, CAST((m.lat - ?) / ? AS INTEGER))) AS y, "
+            "min(?, max(0, CAST((m.lng - ?) / ? AS INTEGER))) AS x, "
+            "COUNT(*) AS total "
+            "FROM locations l JOIN markers m ON m.id = l.id "
+            "WHERE l.north >= ? AND l.south <= ? AND l.east >= ? AND l.west <= ? "
+            "GROUP BY y, x",
+            (cells - 1, south, step_lat, cells - 1, west, step_lng,
+             south, north, west, east),
+        ).fetchall()
+    finally:
+        connection.close()
+    counts = [0] * (cells * cells)
+    for y, x, total in rows:
+        counts[y * cells + x] = total
+    return {
+        "mode": "density", "count": sum(counts),
+        "grid": {"south": south, "west": west, "north": north, "east": east,
+                 "rows": cells, "columns": cells, "counts": counts},
+    }
