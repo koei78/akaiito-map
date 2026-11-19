@@ -2,12 +2,30 @@ import os
 import tempfile
 import unittest
 import struct
+import json
+from pathlib import Path
 
 with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
     os.environ["AKAIITO_DB_PATH"] = os.path.join(_db_dir, "test.sqlite3")
     import app
 
     class PinTests(unittest.TestCase):
+        def test_imported_marker_extent_and_visible_points(self):
+            import imported_markers
+            with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as folder:
+                source = Path(folder) / "markers.json"
+                database = Path(folder) / "markers.sqlite3"
+                source.write_text(json.dumps({
+                    "counts": {"markers": 1, "existing_customers": 1, "parking_spots": 0},
+                    "markers": [{"id": "a", "lat": 35.0, "lng": 139.0, "label": "A"}],
+                    "existing_customers": [{"id": "b", "lat": 36.0, "lng": 140.0, "label": "B"}],
+                    "parking_spots": [],
+                }), encoding="utf-8")
+                imported_markers.import_json(source, database)
+                self.assertEqual(imported_markers.extent(database),
+                                 {"south": 35.0, "west": 139.0, "north": 36.0, "east": 140.0})
+                self.assertEqual(imported_markers.query((34.0, 138.0, 37.0, 141.0), database)["count"], 2)
+
         def client(self, name):
             client = app.app.test_client()
             response = client.post("/register", data={"username": name, "password": "strong-password-123"})

@@ -21,6 +21,9 @@
 !/gsi_precise.py
 !/server_watch.py
 !/README.md
+!/data/
+/data/*
+!/data/imported_markers.sqlite3
 !/.vscode/
 /.vscode/*
 !/.vscode/settings.json
@@ -54,4 +57,5 @@
 !/templates/index.html
 !/templates/google_map.html
 *.sqlite3*
+!/data/imported_markers.sqlite3
 __pycache__/

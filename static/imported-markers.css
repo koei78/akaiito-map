@@ -12,6 +12,7 @@
 .imported-mode-switch{display:flex;gap:4px}
 .imported-mode-switch button{flex:1;min-height:34px;padding:5px;border:1px solid #d8e3db;border-radius:7px;background:#fff;color:#315342;font:700 12px system-ui;cursor:pointer}
 .imported-mode-switch button[aria-pressed=true]{border-color:#2e7656;background:#2e7656;color:#fff}
+.imported-map-summary{margin-top:7px;color:#315342;font:700 11px system-ui}
 .imported-density-legend{display:flex;flex-wrap:wrap;gap:5px 9px;margin-top:8px;align-items:center}
 .imported-density-legend strong{flex:1 1 100%;font-size:11px}
 .imported-density-legend span{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}

@@ -19,16 +19,18 @@
   const controls = document.createElement('div');
   controls.id = 'imported-map-controls';
   controls.hidden = true;
-  controls.innerHTML = '<div class="imported-mode-switch" role="group" aria-label="既存マーカーの表示方法"><button type="button" data-mode="density" aria-pressed="true">分布</button><button type="button" data-mode="pins" aria-pressed="false">個別ピン</button></div><div class="imported-density-legend"><strong>既存ピンの分布</strong><span><i class="density-zero"></i>0</span><span><i class="density-low"></i>1–4</span><span><i class="density-medium"></i>5–19</span><span><i class="density-high"></i>20–99</span><span><i class="density-hot"></i>100件以上</span></div>';
+  controls.innerHTML = '<div class="imported-mode-switch" role="group" aria-label="既存マーカーの表示方法"><button type="button" data-mode="density" aria-pressed="false">分布</button><button type="button" data-mode="pins" aria-pressed="true">ピン表示</button></div><div class="imported-map-summary" role="status">既存ピンを読み込み中…</div><div class="imported-density-legend"><strong>既存ピンの分布</strong><span><i class="density-zero"></i>0</span><span><i class="density-low"></i>1–4</span><span><i class="density-medium"></i>5–19</span><span><i class="density-high"></i>20–99</span><span><i class="density-hot"></i>100件以上</span></div>';
   document.body.append(controls);
   const legend = controls.querySelector('.imported-density-legend');
+  const summary = controls.querySelector('.imported-map-summary');
 
   const labels = {markers: 'マーカー', existing_customers: '既存顧客', parking_spots: '駐車場'};
   const types = {ng: 'NG', star: 'スター', heart: 'ハート', want_to_go: '行きたい', existing_customer: '既存顧客'};
   const colors = {ng: '#697883', star: '#e8a524', heart: '#e56685', want_to_go: '#25a68d', existing_customer: '#4d86df', parking_spots: '#815bc7'};
   const colorFor = item => colors[item.details?.marker_type] || colors[item.layer] || '#396b9d';
   const googleView = location.pathname === '/google';
-  let enabled = false, mode = 'density', layers = [], controller = null, timer = null, currentMap = null;
+  let enabled = true, mode = 'pins', layers = [], controller = null, timer = null, currentMap = null;
+  let initialViewChecked = false;
 
   function clearLayers() {
     for (const layer of layers) googleView ? layer.setMap(null) : currentMap.removeLayer(layer);
@@ -144,6 +146,19 @@
     const east = Math.min(180, coordinate(northeast, 'lng'));
     return south < north && west < east ? {south, west, north, east} : null;
   }
+  async function showDataArea() {
+    const response = await fetch('/api/imported-markers/extent');
+    if (!response.ok) return;
+    const area = await response.json();
+    if (!area) return;
+    status.textContent = '既存ピンのある地域を表示しています…';
+    const corners = [{lat: area.south, lng: area.west}, {lat: area.north, lng: area.east}];
+    if (googleView) {
+      const view = new google.maps.LatLngBounds();
+      corners.forEach(corner => view.extend(corner));
+      currentMap.fitBounds(view);
+    } else currentMap.fitBounds([[area.south, area.west], [area.north, area.east]], {padding: [30, 30]});
+  }
   async function refresh() {
     if (!enabled || !currentMap) return;
     const box = bounds();
@@ -161,7 +176,15 @@
       clearLayers();
       if (data.mode === 'missing') {
         status.textContent = '既存マーカーデータが未登録です';
+        summary.textContent = status.textContent;
         return;
+      }
+      if (!initialViewChecked) {
+        initialViewChecked = true;
+        if (data.count === 0) {
+          await showDataArea();
+          return;
+        }
       }
       if (data.mode === 'density') {
         drawDensity(data.grid);
@@ -172,8 +195,12 @@
           ? `${data.count.toLocaleString()}件。拡大すると個別表示します`
           : `${data.count.toLocaleString()}件を表示`;
       }
+      summary.textContent = `既存ピン ${data.count.toLocaleString()}件`;
     } catch (error) {
-      if (error.name !== 'AbortError') status.textContent = error.message;
+      if (error.name !== 'AbortError') {
+        status.textContent = error.message;
+        summary.textContent = error.message;
+      }
     }
   }
   function schedule() {
@@ -182,12 +209,13 @@
   }
   function toggle() {
     enabled = !enabled;
-    if (enabled) mode = 'density';
+    if (enabled) mode = 'pins';
     button.setAttribute('aria-pressed', String(enabled));
     mobileButton.setAttribute('aria-pressed', String(enabled));
     button.textContent = enabled ? '既存マーカーを隠す' : '既存マーカーを表示';
     mobileButton.setAttribute('aria-label', button.textContent);
     controls.hidden = !enabled;
+    if (enabled) summary.textContent = '既存ピンを読み込み中…';
     syncModeControls();
     if (enabled) schedule();
     else {controller?.abort(); controller = null; clearTimeout(timer); clearLayers(); status.textContent = '';}
@@ -211,6 +239,12 @@
   }
   button.onclick = toggle;
   mobileButton.onclick = toggle;
+  button.setAttribute('aria-pressed', 'true');
+  mobileButton.setAttribute('aria-pressed', 'true');
+  button.textContent = '既存マーカーを隠す';
+  mobileButton.setAttribute('aria-label', button.textContent);
+  controls.hidden = false;
+  syncModeControls();
   const waitMap = setInterval(() => {
     if (typeof map === 'undefined' || !map) return;
     clearInterval(waitMap);

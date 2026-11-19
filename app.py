@@ -183,6 +183,11 @@ def imported_markers_viewport():
     return jsonify(imported_markers.query(bounds))
 
 
+@app.get("/api/imported-markers/extent")
+def imported_markers_extent():
+    return jsonify(imported_markers.extent())
+
+
 @app.get("/api/pins/history")
 def pins_recent_history():
     return jsonify(pin_store.recent_history(session["user_id"]))

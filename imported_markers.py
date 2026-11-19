@@ -6,8 +6,23 @@ import sqlite3
 from pathlib import Path
 from paths import data_dir
 
-DEFAULT_DB = data_dir() / "imported_markers.sqlite3"
+REPOSITORY_DB = Path(__file__).resolve().parent / "data" / "imported_markers.sqlite3"
+DEFAULT_DB = REPOSITORY_DB if REPOSITORY_DB.is_file() else data_dir() / "imported_markers.sqlite3"
 LAYERS = ("markers", "existing_customers", "parking_spots")
+
+
+def extent(db=DEFAULT_DB):
+    """Bounds of the imported snapshot, for finding it from an empty map view."""
+    if not Path(db).is_file():
+        return None
+    connection = sqlite3.connect(f"file:{Path(db).resolve().as_posix()}?mode=ro", uri=True)
+    try:
+        row = connection.execute("SELECT MIN(lat), MIN(lng), MAX(lat), MAX(lng) FROM markers").fetchone()
+        if not row or row[0] is None:
+            return None
+        return {"south": row[0], "west": row[1], "north": row[2], "east": row[3]}
+    finally:
+        connection.close()
 
 
 def import_json(source, target=DEFAULT_DB):
