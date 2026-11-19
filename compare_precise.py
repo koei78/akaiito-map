@@ -56,9 +56,10 @@ with tempfile.TemporaryDirectory() as folder:
     schema_file.write_text(json.dumps(schema), encoding="utf-8")
     prompt = ("添付画像だけを使って判断し、コマンドやツールは使わず、指定のJSONを直接返してください。"
               "1枚目は過去、2枚目は現在の同じ地域の航空写真です。"
-              "過去には建物の屋根がなく、現在は完成した屋根がある場所だけを候補にしてください。"
+              "現在は完成した建物の屋根があり、過去には建物がなかった新築、または古い建物を取り壊して新しい建物に建て替えた場所を候補にしてください。"
+              "建て替えは屋根形状や建物配置が明確に変わり新しい建物である根拠が必要です。"
               "屋根の色替え、改修、建物の影や撮影角度の違いを新築と扱わないでください。"
-              "道路、車、樹木、季節差、既存の建物は除外してください。"
+              "現在建物がなく取り壊された場所、道路、車、樹木、季節差、既存の建物は除外してください。"
               "古い画像が不鮮明・遮蔽されていて判断できない場所も含めないでください。"
               "buildingsは多角形の配列で、各多角形は周囲を順番にたどる3点以上の[x,y]の配列です。"
               "座標は2枚目の画像の左上を[0,0]、右下を[1000,1000]とする整数です。"
@@ -98,15 +99,18 @@ with tempfile.TemporaryDirectory() as folder:
         review_schema = {"type": "object", "properties": {"assessments": {"type": "array", "items": {
             "type": "object", "properties": {"id": {"type": "integer"},
             "decision": {"type": "string", "enum": ["new", "review", "reject"]},
+            "change_kind": {"type": "string", "enum": ["new_build", "rebuild", "uncertain", "demolition", "non_building", "unchanged"]},
             "reason": {"type": "string"}},
-            "required": ["id", "decision", "reason"], "additionalProperties": False}}},
+            "required": ["id", "decision", "change_kind", "reason"], "additionalProperties": False}}},
             "required": ["assessments"], "additionalProperties": False}
         review_schema_file, review_answer = folder / "review-schema.json", folder / "review-answer.json"
         review_schema_file.write_text(json.dumps(review_schema), encoding="utf-8")
         review_prompt = ("2枚の航空写真を独立に再確認してください。1枚目は過去、2枚目は現在です。"
                          "両画像の同じ番号の外周が同じ場所を示します。"
-                         "各番号について、過去は建物がなく現在は新しい完成した屋根が見える場合だけ decision=new としてください。"
-                         "過去にも建物がある、改修・建て替えか不明、撮影角度・季節・影・画質差だけの可能性がある場合は review または reject としてください。"
+                         "各番号について、現在完成した建物の屋根が見え、過去は建物がなかった新築なら change_kind=new_build、"
+                         "以前の建物と屋根形状・位置が明確に異なり新しい建物への建て替えなら rebuild とし、その場合のみ decision=new としてください。"
+                         "現在建物がなくなった場合は demolition、建物でないものは non_building、変化しない建物は unchanged とし reject にしてください。"
+                         "改修・建て替えか不明、撮影角度・季節・影・画質差だけの可能性がある場合は uncertain とし review または reject としてください。"
                          "判定根拠を短く具体的に書いてください。対象番号は1から" + str(len(preliminary)) + "までです。"
                          "指定のJSONだけを返し、コマンドやツールは使わないでください。")
         try:
@@ -124,7 +128,8 @@ a, d, b, e, c, f = map(float, world_file.read_text(encoding="utf-8").split())
 coordinates = []
 for candidate_id, (pixels, quality, quality_reason) in enumerate(preliminary, 1):
     decision, reason = final_decision(quality, quality_reason, assessments.get(candidate_id))
-    if decision == "reject":
+    # Only confirmed new builds and rebuilds are displayed as results.
+    if decision != "new":
         continue
     moments = cv2.moments(pixels)
     x, y = moments["m10"] / moments["m00"], moments["m01"] / moments["m00"]

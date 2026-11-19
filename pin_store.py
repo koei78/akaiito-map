@@ -47,6 +47,9 @@ def init_db():
                 shared INTEGER NOT NULL, recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
+        if "show_shared_pins" not in columns:
+            db.execute("ALTER TABLE users ADD COLUMN show_shared_pins INTEGER NOT NULL DEFAULT 0")
 
 
 def create_user(username, password):
@@ -64,8 +67,17 @@ def authenticate(username, password):
 
 def account(user_id):
     with connect() as db:
-        row = db.execute("SELECT id,username,created_at FROM users WHERE id=?", (user_id,)).fetchone()
-    return dict(row) if row else None
+        row = db.execute("SELECT id,username,created_at,show_shared_pins FROM users WHERE id=?", (user_id,)).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    result["show_shared_pins"] = bool(result["show_shared_pins"])
+    return result
+
+
+def set_show_shared_pins(user_id, enabled):
+    with connect() as db:
+        db.execute("UPDATE users SET show_shared_pins=? WHERE id=?", (int(enabled), user_id))
 
 
 def change_username(user_id, username, current_password):

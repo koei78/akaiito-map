@@ -11,6 +11,7 @@
 !/test_pins.py
 !/test_image_quality.py
 !/image_quality.py
+!/outline_matching.py
 !/compare.py
 !/compare_precise.py
 !/get.py

@@ -24,7 +24,7 @@
     e.preventDefault(); fetch('/logout', {method:'POST'}).then(() => location.href='/login');
   });
   tools.querySelector('#pin-user').textContent = 'ログイン中';
-  fetch('/api/me').then(r => r.json()).then(d => {window.pinUserId=d.id;tools.querySelector('#pin-user').textContent = 'ログイン中: ' + d.username;reload();});
+  fetch('/api/me').then(r => r.json()).then(d => {window.pinUserId=d.id;tools.querySelector('#pin-user').textContent = 'ログイン中: ' + d.username;tools.querySelector('#pin-filter').value=d.show_shared_pins?'all':'mine';window.dispatchEvent(new CustomEvent('shared-pins-setting',{detail:Boolean(d.show_shared_pins)}));reload();});
 
   const editor = document.createElement('dialog'); editor.id='pin-editor';
   editor.innerHTML = '<h2 id="pin-heading">ピン</h2><p class="pin-subtitle">この場所の情報を記録します</p><form id="pin-form"><label>ピンの名前<input name="title" maxlength="100" required placeholder="例：確認したい建物"></label><label>メモ<textarea name="note" maxlength="2000" rows="4" placeholder="気づいたことを記録"></textarea></label><label class="share-label"><input type="checkbox" name="shared"> 他のログインユーザーに共有する</label><menu><button type="submit">保存する</button><button type="button" id="pin-delete">ピンを削除</button><button type="button" id="pin-cancel">閉じる</button></menu></form><p id="pin-error" role="alert"></p>';
@@ -74,7 +74,14 @@
     error.textContent='';editor.showModal();
   }
   async function reload(){const response=await fetch('/api/pins');if(!response.ok)return;allPins=await response.json();drawPins();}
-  tools.querySelector('#pin-filter').onchange=drawPins;tools.querySelector('#pin-reload').onclick=reload;
+  const pinFilter=tools.querySelector('#pin-filter');
+  window.addEventListener('shared-pins-setting', event=>{pinFilter.value=event.detail?'all':'mine';drawPins();});
+  pinFilter.onchange=async()=>{
+    const enabled=pinFilter.value==='all';
+    try{const response=await fetch('/api/account/settings',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({show_shared_pins:enabled})});if(!response.ok)throw Error();window.dispatchEvent(new CustomEvent('shared-pins-setting',{detail:enabled}));}
+    catch(e){pinFilter.value=enabled?'mine':'all';tools.querySelector('#pin-count').textContent='設定を保存できませんでした';drawPins();}
+  };
+  tools.querySelector('#pin-reload').onclick=reload;
   tools.querySelector('#pin-search-desktop').oninput=drawPins;
   window.addEventListener('mobile-pin-search', drawPins);
   tools.querySelector('#pin-add').onclick=()=>{adding=true;tools.querySelector('#pin-add').textContent='地図上の場所をクリック';};

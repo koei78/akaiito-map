@@ -124,12 +124,24 @@ def logout():
 
 @app.get("/api/me")
 def me():
-    return jsonify(id=session["user_id"], username=session["username"], csrf=session["csrf"])
+    account = pin_store.account(session["user_id"])
+    return jsonify(id=session["user_id"], username=session["username"], csrf=session["csrf"],
+                   show_shared_pins=bool(account and account["show_shared_pins"]))
 
 
 @app.get("/api/account")
 def account_details():
     return jsonify(pin_store.account(session["user_id"]))
+
+
+@app.patch("/api/account/settings")
+def account_settings():
+    data = request.get_json(silent=True) or {}
+    enabled = data.get("show_shared_pins")
+    if not isinstance(enabled, bool):
+        return jsonify(error="表示設定を確認してください。"), 400
+    pin_store.set_show_shared_pins(session["user_id"], enabled)
+    return jsonify(show_shared_pins=enabled)
 
 
 @app.patch("/api/account/username")
@@ -421,13 +433,18 @@ def compare():
             raise ValueError()
         dy = 160 / 111320
         dx = 160 / (111320 * math.cos(math.radians((south + north) / 2)))
-        rows, cols = math.ceil((north-south)/dy), math.ceil((east-west)/dx)
+        # Keep each image at 160m while overlapping adjacent images by 16m.
+        # This gives buildings on a cell edge another complete view.
+        stride_y, stride_x = dy * 0.9, dx * 0.9
+        margin_y, margin_x = dy * 0.05, dx * 0.05
+        rows = max(1, math.ceil((north - south + margin_y - dy) / stride_y) + 1)
+        cols = max(1, math.ceil((east - west + margin_x - dx) / stride_x) + 1)
         if rows * cols > 400:
             return jsonify(error="範囲が広すぎます。分割数が400以下になるようにしてください。"), 400
         cells = []
         for row in range(rows):
             for col in range(cols):
-                s, w = south + row * dy, west + col * dx
+                s, w = south - margin_y + row * stride_y, west - margin_x + col * stride_x
                 n, e = s + dy, w + dx
                 if polygon.intersects(box(w, s, e, n)):
                     cells.append((s, w, n, e))

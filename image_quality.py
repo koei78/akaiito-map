@@ -84,6 +84,15 @@ def inspect_candidate(normalized_polygon, old, new, coverage):
         shape = Polygon(pixels)
         if not shape.is_valid or shape.area < 64 or shape.area > width * height * 0.25:
             return None, "reject", "外周の形または面積が不正です"
+        if (np.any(pixels[:, 0] <= 1) or np.any(pixels[:, 0] >= width - 2)
+                or np.any(pixels[:, 1] <= 1) or np.any(pixels[:, 1] >= height - 2)):
+            return None, "reject", "画像の端で建物の外周が切れています"
+        # Remove subpixel-scale jagged points only when the roof area is preserved.
+        simplified = cv2.approxPolyDP(pixels, 0.8, True).reshape(-1, 2)
+        simplified_shape = Polygon(simplified) if len(simplified) >= 3 else None
+        if (simplified_shape is not None and simplified_shape.is_valid
+                and simplified_shape.symmetric_difference(shape).area <= shape.area * 0.02):
+            pixels = simplified
     except (TypeError, ValueError):
         return None, "reject", "外周座標が不正です"
     mask = np.zeros((height, width), np.uint8)
@@ -114,7 +123,10 @@ def final_decision(quality, quality_reason, assessment):
     assessment = assessment if isinstance(assessment, dict) else {}
     if assessment.get("decision") == "reject":
         return "reject", str(assessment.get("reason") or "再確認で新築ではないと判断")[:240]
-    verified = assessment.get("decision") == "new"
+    kind = assessment.get("change_kind")
+    if kind in ("demolition", "non_building", "unchanged"):
+        return "reject", str(assessment.get("reason") or "対象の建物ではありません")[:240]
+    verified = assessment.get("decision") == "new" and kind in ("new_build", "rebuild")
     decision = "new" if verified and quality == "accept" else "review"
     reasons = []
     if not verified:
@@ -123,4 +135,4 @@ def final_decision(quality, quality_reason, assessment):
         reasons.append(quality_reason)
     if assessment.get("reason"):
         reasons.append(str(assessment["reason"])[:240])
-    return decision, " / ".join(reasons) or "過去に屋根がなく現在に新しい屋根を確認"
+    return decision, " / ".join(reasons) or ("建て替えを確認" if kind == "rebuild" else "過去に屋根がなく現在に新しい屋根を確認")

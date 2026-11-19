@@ -17,6 +17,8 @@ body:has(#map) .status,body:has(#map) .bar .status{background:var(--ui-soft)!imp
 body:has(#map) .legend,body:has(#map) .bar .legend{color:var(--ui-muted)!important}body:has(#map) a{color:var(--ui-blue)}
 body:has(#map) .dates{background:#fff!important;color:var(--ui-muted)!important;border:1px solid #e9ecef!important;box-shadow:0 2px 9px #1d2c3720!important}body:has(#map) .dates strong{color:var(--ui-ink)!important}
 .leaflet-control-zoom a{background:#fff!important;color:var(--ui-ink)!important;border-color:var(--ui-line)!important}.leaflet-control-attribution{background:#ffffffed!important;color:var(--ui-muted)!important}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#fff!important;color:var(--ui-ink)!important}
+.leaflet-container a.leaflet-popup-close-button{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:0;line-height:1;font-size:20px;text-decoration:none}
+#account-dialog #account-close,.detection-history-head button,#detection-history-active button,#map-notice button,.close{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;padding:0;line-height:1;font-family:Arial,sans-serif}
 
 /* Saved pins and account */
 #pin-tools{background:#fff!important;color:var(--ui-ink)!important;border:1px solid #e5e8eb!important;box-shadow:0 6px 24px #1d2c372c!important}

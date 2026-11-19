@@ -13,6 +13,7 @@ import mapbox_vector_tile
 from paths import data_dir
 from shapely.geometry import Point, Polygon, shape
 from shapely.ops import transform
+from outline_matching import footprint_agreement
 
 ZOOM = 16
 N = 2 ** ZOOM
@@ -108,13 +109,15 @@ for p in points:
     except (TypeError, ValueError):
         ai_polygon = None
     for building in buildings:
-        if ai_polygon is None or not building.intersects(ai_polygon):
-            continue
-        scaled = transform(lambda x, y, z=None: (x * scale, y), building)
-        distance = scaled.distance(point) * 111320
-        overlap = building.intersection(ai_polygon).area / ai_polygon.area
-        if distance <= 5 and overlap >= 0.25:
-            nearby.append((-overlap, distance, scaled.area, building))
+        components = list(building.geoms) if building.geom_type == 'MultiPolygon' else [building]
+        for component in components:
+            score = footprint_agreement(ai_polygon, component)
+            if score is None:
+                continue
+            scaled = transform(lambda x, y, z=None: (x * scale, y), component)
+            distance = scaled.distance(point) * 111320
+            if distance <= 5:
+                nearby.append((-score, distance, scaled.area, component))
     if nearby:
         _, distance, _, building = min(nearby, key=lambda v: (v[0], v[1], v[2]))
         if building.geom_type == 'MultiPolygon':

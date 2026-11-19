@@ -53,6 +53,21 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             self.assertEqual([row["action"] for row in recent], ["deleted", "updated", "created"])
             self.assertEqual(bob.get("/api/pins/history").json, [])
 
+        def test_shared_pin_display_setting_is_per_account_and_does_not_share_private_pins(self):
+            alice, a = self.client("sharedsettingalice")
+            bob, b = self.client("sharedsettingbob")
+            private = alice.post('/api/pins', json={'lat': 35.5, 'lng': 137.8,
+                                  'title': 'private', 'shared': False}, headers=a)
+            self.assertEqual(private.status_code, 201)
+            self.assertFalse(bob.get('/api/account').json['show_shared_pins'])
+            self.assertEqual(bob.patch('/api/account/settings', json={'show_shared_pins': True}, headers=b).status_code, 200)
+            self.assertTrue(bob.get('/api/me').json['show_shared_pins'])
+            self.assertFalse(alice.get('/api/account').json['show_shared_pins'])
+            self.assertEqual(bob.get('/api/pins').json, [])
+            self.assertEqual(bob.patch('/api/account/settings', json={'show_shared_pins': 'true'}, headers=b).status_code, 400)
+            self.assertEqual(bob.patch('/api/account/settings', json={'show_shared_pins': False}, headers=b).status_code, 200)
+            self.assertFalse(bob.get('/api/me').json['show_shared_pins'])
+
         def test_detected_building_history_is_saved_per_user(self):
             import detection_store
             alice, _ = self.client("detectalice")
