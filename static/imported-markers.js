@@ -30,6 +30,7 @@
   const colorFor = item => colors[item.details?.marker_type] || colors[item.layer] || '#396b9d';
   const googleView = location.pathname === '/google';
   let enabled = true, mode = 'pins', layers = [], controller = null, timer = null, currentMap = null;
+  let leafletRenderer = null;
   let initialViewChecked = false;
   let renderedKey = null, renderedAt = 0;
   const cachedViews = new Map();
@@ -70,9 +71,9 @@
       marker.addListener('click', () => new google.maps.InfoWindow({content: popup(item)}).open(currentMap, marker));
       layers.push(marker);
     } else {
-      const icon = L.divIcon({className: 'imported-marker-icon',
-        html: `<span style="background:${color}"></span>`, iconSize: [22, 22], iconAnchor: [11, 11]});
-      layers.push(L.marker([item.lat, item.lng], {icon, title: item.label}).addTo(currentMap).bindPopup(popup(item)));
+      const marker = L.circleMarker([item.lat, item.lng], {renderer: leafletRenderer, radius: 9,
+        color: '#fff', weight: 2, fillColor: color, fillOpacity: 1});
+      layers.push(marker.addTo(currentMap).bindPopup(() => popup(item)));
     }
   }
   function addCluster(item) {
@@ -120,13 +121,17 @@
       layers.push(polygon);
     } else {
       const rectangle = L.rectangle([[south, west], [north, east]], {
-        color, weight: 1, opacity: 0.48, fillColor: color, fillOpacity: opacity,
+        renderer: leafletRenderer, color, weight: 1, opacity: 0.48, fillColor: color, fillOpacity: opacity,
       }).addTo(currentMap).bindTooltip(title);
       rectangle.on('click', zoomIn);
       layers.push(rectangle);
     }
   }
   function drawDensity(grid) {
+    if (googleView) {
+      drawGoogleDensity(grid);
+      return;
+    }
     const height = (grid.north - grid.south) / grid.rows;
     const width = (grid.east - grid.west) / grid.columns;
     for (let y = 0; y < grid.rows; y++) {
@@ -136,6 +141,63 @@
           grid.counts[y * grid.columns + x]);
       }
     }
+  }
+  function drawGoogleDensity(grid) {
+    // One canvas replaces 144 individual Google Maps polygon objects.
+    const overlay = new google.maps.OverlayView();
+    let canvas = null, cells = [];
+    overlay.onAdd = () => {
+      canvas = document.createElement('canvas');
+      canvas.style.cssText = 'position:absolute;pointer-events:auto';
+      canvas.addEventListener('click', event => {
+        const box = canvas.getBoundingClientRect();
+        const x = event.clientX - box.left, y = event.clientY - box.top;
+        const cell = cells.find(c => x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h);
+        if (!cell) return;
+        event.stopPropagation();
+        currentMap.setCenter(cell.center);
+        currentMap.setZoom(Math.min((currentMap.getZoom() || 10) + 2, 21));
+      });
+      overlay.getPanes().overlayMouseTarget.appendChild(canvas);
+    };
+    overlay.draw = () => {
+      if (!canvas) return;
+      const projection = overlay.getProjection();
+      if (!projection) return;
+      const nw = projection.fromLatLngToDivPixel(new google.maps.LatLng(grid.north, grid.west));
+      const se = projection.fromLatLngToDivPixel(new google.maps.LatLng(grid.south, grid.east));
+      const width = Math.ceil(se.x - nw.x), height = Math.ceil(se.y - nw.y);
+      if (width <= 0 || height <= 0) return;
+      const scale = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.style.left = `${nw.x}px`; canvas.style.top = `${nw.y}px`;
+      canvas.style.width = `${width}px`; canvas.style.height = `${height}px`;
+      canvas.width = Math.ceil(width * scale); canvas.height = Math.ceil(height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.scale(scale, scale); ctx.lineWidth = 1;
+      cells = [];
+      for (let y = 0; y < grid.rows; y++) {
+        const south = grid.south + y * (grid.north - grid.south) / grid.rows;
+        const north = grid.south + (y + 1) * (grid.north - grid.south) / grid.rows;
+        for (let x = 0; x < grid.columns; x++) {
+          const west = grid.west + x * (grid.east - grid.west) / grid.columns;
+          const east = grid.west + (x + 1) * (grid.east - grid.west) / grid.columns;
+          const a = projection.fromLatLngToDivPixel(new google.maps.LatLng(north, west));
+          const b = projection.fromLatLngToDivPixel(new google.maps.LatLng(south, east));
+          const cell = {x: a.x - nw.x, y: a.y - nw.y, w: b.x - a.x, h: b.y - a.y,
+                        center: {lat: (south + north) / 2, lng: (west + east) / 2}};
+          const count = grid.counts[y * grid.columns + x], color = densityColor(count);
+          ctx.globalAlpha = count ? 0.43 : 0.17; ctx.fillStyle = color;
+          ctx.fillRect(cell.x, cell.y, cell.w, cell.h);
+          ctx.globalAlpha = 0.48; ctx.strokeStyle = color;
+          ctx.strokeRect(cell.x, cell.y, cell.w, cell.h);
+          cells.push(cell);
+        }
+      }
+      ctx.globalAlpha = 1;
+    };
+    overlay.onRemove = () => { if (canvas) canvas.remove(); canvas = null; cells = []; };
+    overlay.setMap(currentMap);
+    layers.push(overlay);
   }
   function bounds() {
     const view = currentMap.getBounds();
@@ -266,6 +328,7 @@
     if (typeof map === 'undefined' || !map) return;
     clearInterval(waitMap);
     currentMap = map;
+    if (!googleView) leafletRenderer = L.canvas({padding: 0.2});
     if (googleView) map.addListener('idle', schedule);
     else map.on('moveend zoomend', schedule);
     if (enabled) schedule();

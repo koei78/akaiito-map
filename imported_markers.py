@@ -74,7 +74,7 @@ def import_json(source, target=DEFAULT_DB):
     return next_id
 
 
-def query(bounds, db=DEFAULT_DB, point_limit=120):
+def query(bounds, db=DEFAULT_DB, point_limit=60):
     """Return only visible points, or compact counts for a crowded viewport."""
     south, west, north, east = bounds
     if not Path(db).is_file():
@@ -104,8 +104,9 @@ def query(bounds, db=DEFAULT_DB, point_limit=120):
                               "lat": row["lat"], "lng": row["lng"], "label": row["label"],
                               "details": visible})
             return {"mode": "points", "count": count, "items": items}
-        cell_lat = max((north - south) / 10, 1e-9)
-        cell_lng = max((east - west) / 10, 1e-9)
+        # Fewer groups mean fewer map objects on low-powered phones.
+        cell_lat = max((north - south) / 6, 1e-9)
+        cell_lng = max((east - west) / 6, 1e-9)
         rows = connection.execute(
             f"SELECT m.layer, CAST((m.lat - ?) / ? AS INTEGER) AS y, "
             f"CAST((m.lng - ?) / ? AS INTEGER) AS x, COUNT(*) AS count, "
