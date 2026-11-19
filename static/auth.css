@@ -4,11 +4,11 @@ body{background:#fff;color:#23456d;font-family:-apple-system,BlinkMacSystemFont,
 body.dialog-open{overflow:hidden}
 button,input{font:inherit}
 button{cursor:pointer}
-.screen{width:min(100%,460px);min-height:100svh;margin:auto;padding:24px 26px max(45px,env(safe-area-inset-bottom));display:flex;flex-direction:column;justify-content:center}
-.art{display:block;width:100%;height:auto;margin:0 auto 38px;mix-blend-mode:multiply}
-.buttons{display:grid;gap:15px}
+.screen{width:min(100%,460px);min-height:100svh;margin:auto;padding:calc(10svh + env(safe-area-inset-top)) 26px max(45px,env(safe-area-inset-bottom));display:flex;flex-direction:column;justify-content:center}
+.art{display:block;width:100%;height:auto;margin:0 auto 42px}
+.buttons{display:grid;gap:16px}
 .entry-button{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:54px;padding:0 20px;border-radius:28px;font-size:15px;font-weight:700;letter-spacing:.02em}
-.entry-button svg{position:absolute;left:21px;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.entry-button svg{position:absolute;left:22px;width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .primary{border:1px solid #284d78;background:#284d78;color:#fff}
 .secondary{border:1.5px solid #284d78;background:#fff;color:#284d78}
 .entry-button:hover,.submit:hover{filter:brightness(.95)}
@@ -26,5 +26,5 @@ small[hidden]{display:none}
 .submit{width:100%;min-height:50px;margin-top:26px;border:0;border-radius:25px;background:#284d78;color:#fff;font-weight:700}
 .switch{display:block;margin:19px auto 0;padding:4px;border:0;background:transparent;color:#284d78;font-size:13px;font-weight:700}
 .error{margin:0 0 16px;padding:11px 13px;border-radius:9px;background:#fff1ef;color:#a43f37;font-size:13px;line-height:1.5}
-@media(max-height:680px){.screen{justify-content:flex-start}.art{max-height:calc(100svh - 215px);width:auto;max-width:100%;object-fit:contain;margin-top:auto;margin-bottom:25px}.buttons{margin-bottom:auto}}
+@media(max-height:680px){.screen{justify-content:flex-start;padding-top:calc(24px + env(safe-area-inset-top))}.art{max-height:calc(100svh - 215px);width:auto;max-width:100%;object-fit:contain;margin-top:auto;margin-bottom:25px}.buttons{margin-bottom:auto}}
 @media(min-width:700px){body{background:#f4f6f8}.screen{background:#fff;box-shadow:0 0 40px rgba(35,69,109,.08)}}
