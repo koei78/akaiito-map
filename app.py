@@ -26,7 +26,24 @@ import imported_markers
 from paths import imagery_executable, data_dir, configured_path
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("AKAIITO_SECRET_KEY") or secrets.token_hex(32)
+
+
+def session_secret():
+    configured = os.environ.get("AKAIITO_SECRET_KEY")
+    if configured:
+        return configured
+    path = data_dir() / "session-secret"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("x", encoding="ascii") as file:
+            key = secrets.token_hex(32)
+            file.write(key)
+            return key
+    except FileExistsError:
+        return path.read_text(encoding="ascii").strip()
+
+
+app.secret_key = session_secret()
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=os.environ.get("AKAIITO_HTTPS") == "1")
 pin_store.init_db()

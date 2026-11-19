@@ -154,6 +154,7 @@
     status.textContent = '表示範囲を読み込み中…';
     try {
       const response = await fetch(`/api/imported-markers?${query}`, {signal: active.signal});
+      if (response.status === 401) throw new Error('ログインが切れました。画面を再読み込みしてログインしてください');
       if (!response.ok) throw new Error('読み込みに失敗しました');
       const data = await response.json();
       if (!enabled || active !== controller) return;
