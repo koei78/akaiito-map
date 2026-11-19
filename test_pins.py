@@ -35,6 +35,35 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             self.assertEqual([row["action"] for row in recent], ["deleted", "updated", "created"])
             self.assertEqual(bob.get("/api/pins/history").json, [])
 
+        def test_detected_building_history_is_saved_per_user(self):
+            import detection_store
+            alice, _ = self.client("detectalice")
+            bob, _ = self.client("detectbob")
+            alice_id = alice.get("/api/me").json["id"]
+            polygon = [[35.5, 137.8], [35.5, 137.81], [35.51, 137.81]]
+            run_id = detection_store.start_run(alice_id, 15, polygon)
+            points = [
+                {"number": 1, "lat": 35.5, "lon": 137.8, "decision": "new", "outline": polygon, "old_date": "2010-01-01", "new_date": "2025-01-01"},
+                {"number": 2, "lat": 35.6, "lon": 137.9, "decision": "existing", "outline": polygon},
+            ]
+            detection_store.finish_run(run_id, "done", points, "候補1件")
+            listing = alice.get("/api/detections/history").json
+            self.assertEqual(listing[0]["building_count"], 1)
+            detail = alice.get(f"/api/detections/history/{run_id}").json
+            self.assertEqual(detail["polygon"], polygon)
+            self.assertEqual(len(detail["points"]), 1)
+            self.assertEqual(bob.get("/api/detections/history").json, [])
+            self.assertEqual(bob.get(f"/api/detections/history/{run_id}").status_code, 404)
+            previous_state = app.state.copy()
+            try:
+                app.state.update(owner_id=alice_id, status="done", message="候補1件", points=points)
+                self.assertEqual(bob.get("/status").json["points"], [])
+                self.assertEqual(bob.get("/outlines.geojson").status_code, 404)
+                self.assertEqual(alice.get("/status").json["points"], points)
+            finally:
+                app.state.clear()
+                app.state.update(previous_state)
+
         def test_login_and_csrf(self):
             client, headers = self.client("charlie")
             self.assertEqual(app.app.test_client().get("/health").json, {"ok": True})
@@ -60,6 +89,7 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             self.assertIn("/static/mobile-map.css", page)
             self.assertIn("/static/mobile-map.js", page)
             self.assertIn("/static/map-theme.css", page)
+            self.assertIn("/static/detection-history.js", page)
             with app.app.test_request_context("/google"):
                 from flask import render_template, session
                 session["csrf"] = "test-token"
@@ -69,6 +99,7 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
                 self.assertIn("/static/mobile-map.css", google)
                 self.assertIn("/static/mobile-map.js", google)
                 self.assertIn("/static/map-theme.css", google)
+                self.assertIn("/static/detection-history.js", google)
 
         def test_google_map_requires_key_and_opens_when_configured(self):
             from pathlib import Path
@@ -81,6 +112,13 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             with patch.dict(os.environ, {"GOOGLE_MAPS_KEY_FILE": str(key_file)}, clear=False), patch.object(app, "reserve_map_load", return_value=True):
                 self.assertIn("const googleAvailable = true", client.get("/").get_data(as_text=True))
                 self.assertIn("maps.googleapis.com", client.get("/google?map=satellite").get_data(as_text=True))
+            if os.name == "nt":
+                home = Path(_db_dir) / "user"
+                fallback = home / "AppData" / "Local" / "AerialComparison" / "google_maps_key.txt"
+                fallback.parent.mkdir(parents=True)
+                fallback.write_text("fallback-test-key", encoding="utf-8")
+                with patch.dict(os.environ, {"GOOGLE_MAPS_KEY_FILE": ""}), patch.object(app, "data_dir", return_value=Path(_db_dir) / "sandbox"), patch.object(app.Path, "home", return_value=home):
+                    self.assertEqual(app.google_maps_key(), "fallback-test-key")
 
         def test_relative_configuration_uses_project_folder(self):
             from unittest.mock import patch

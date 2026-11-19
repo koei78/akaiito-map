@@ -3,6 +3,7 @@
 !/.gitignore
 !/app.py
 !/pin_store.py
+!/detection_store.py
 !/paths.py
 !/requirements.txt
 !/test_pins.py
@@ -10,6 +11,7 @@
 !/compare_precise.py
 !/get.py
 !/google_usage.py
+!/configure_google_maps.py
 !/gsi_area.py
 !/gsi_buildings.py
 !/gsi_precise.py
@@ -33,6 +35,8 @@
 !/static/map-theme.css
 !/static/auth.css
 !/static/mobile-map.js
+!/static/detection-history.js
+!/static/detection-history.css
 !/templates/
 /templates/*
 !/templates/auth.html

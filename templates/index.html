@@ -17,7 +17,7 @@
 @media(max-width:370px){.year-control{flex-basis:100%}.layer-select{flex-basis:60%}.panel{gap:6px}.content{gap:6px}}
 @media(max-width:700px){.panel{max-height:min(38dvh,290px);overflow:auto;overscroll-behavior:contain}.actions{flex-wrap:wrap}.actions button{min-width:calc(50% - 4px);padding:8px}.status{font-size:11px}.dates{max-height:54px;overflow:auto;bottom:calc(116px + env(safe-area-inset-bottom))}.leaflet-control-zoom{margin-bottom:calc(118px + env(safe-area-inset-bottom))!important}}
 @media(max-width:380px){.panel{max-height:36dvh}.brand small{display:none}.year-control{min-width:0}}
-</style><link rel="stylesheet" href="{{ url_for('static', filename='mobile-map.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='map-theme.css') }}"></head><body><div id="map"></div>
+</style><link rel="stylesheet" href="{{ url_for('static', filename='mobile-map.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='map-theme.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='detection-history.css') }}"></head><body><div id="map"></div>
 <div class="dates" id="dates" role="status"><div><strong>建物外周：</strong><span id="building-date">候補の照合に使用・個別の更新日不明</span></div><div><strong>表示中の航空写真：</strong><span id="photo-date">Esri（撮影日は特定できません）</span></div></div><aside class="panel"><div class="brand"><div class="brand-icon"><img src="/static/app-logo.png?v=3" alt="新築マップのロゴ"></div><div><small>IMAGERY EXPLORER</small><h1>航空写真の比較</h1></div></div>
 <div class="content"><div class="eyebrow">CHANGE DETECTION</div><h2>街の変化を見つける</h2><p class="description">撮影日は区画の中心で見つかった撮影日のうち、範囲全体を取得できた日を使用します。</p>
 <div class="steps"><div class="step"><span>1</span>地図を移動して場所を選ぶ</div><div class="step"><span>2</span>自由に範囲を囲む</div><div class="step"><span>3</span>比較を開始する</div></div>
@@ -79,4 +79,4 @@ async function poll(){try{
  }catch(e){message.textContent='接続できません';button.disabled=!polygon;}}
 
 poll();
-</script><script src="{{ url_for('static', filename='pins.js') }}"></script><script src="{{ url_for('static', filename='mobile-map.js') }}"></script><script src="{{ url_for('static', filename='account.js') }}"></script></body></html>
+</script><script src="{{ url_for('static', filename='pins.js') }}"></script><script src="{{ url_for('static', filename='mobile-map.js') }}"></script><script src="{{ url_for('static', filename='account.js') }}"></script><script src="{{ url_for('static', filename='detection-history.js') }}"></script></body></html>

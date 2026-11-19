@@ -9,6 +9,7 @@
     layers: svg('<path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>'),
     draw: svg('<path d="m4 20 4.5-1 11-11-3.5-3.5-11 11L4 20Z"/><path d="m14.5 6.5 3 3"/>'),
     pin: svg('<path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2.3"/>'),
+    history: svg('<path d="M3 12a9 9 0 1 0 3-6.7M3 4v4h4"/><path d="M12 7v5l3 2"/>'),
     locate: svg('<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>'),
     back: svg('<path d="m15 18-6-6 6-6"/>'),
     more: svg('<path d="M4 7h16M7 12h10M10 17h4"/>'),
@@ -30,7 +31,7 @@
   const rail = document.createElement('nav');
   rail.id = 'mobile-rail';
   rail.setAttribute('aria-label', '地図の操作');
-  rail.innerHTML = `<button id="rail-layers" type="button" aria-label="地図の種類" title="地図の種類">${icons.layers}<span>地図</span></button><button id="rail-draw" type="button" aria-label="比較する範囲を囲む" title="範囲を囲む">${icons.draw}<span>範囲</span></button><button id="rail-pins" type="button" aria-label="保存ピンを見る" title="保存ピン">${icons.pin}<span>ピン</span></button><button id="rail-locate" type="button" aria-label="現在地を表示" title="現在地">${icons.locate}<span>現在地</span></button><div id="mobile-layer-menu" hidden></div>`;
+  rail.innerHTML = `<button id="rail-layers" type="button" aria-label="地図の種類" title="地図の種類">${icons.layers}<span>地図</span></button><button id="rail-draw" type="button" aria-label="比較する範囲を囲む" title="範囲を囲む">${icons.draw}<span>範囲</span></button><button id="rail-pins" type="button" aria-label="保存ピンを見る" title="保存ピン">${icons.pin}<span>ピン</span></button><button id="rail-history" type="button" aria-label="新築検出の履歴を見る" title="検出履歴">${icons.history}<span>履歴</span></button><button id="rail-locate" type="button" aria-label="現在地を表示" title="現在地">${icons.locate}<span>現在地</span></button><div id="mobile-layer-menu" hidden></div>`;
   document.body.append(rail);
 
   const sheet = document.createElement('section');
@@ -77,6 +78,7 @@
   reopen.onclick = showSheet;
   sheet.querySelector('#sheet-handle').onclick = hideSheet;
   rail.querySelector('#rail-pins').onclick = () => choose('pins');
+  rail.querySelector('#rail-history').onclick = () => window.dispatchEvent(new Event('open-detection-history'));
   rail.querySelector('#rail-draw').onclick = () => {
     choose('compare');
     document.getElementById('draw').click();

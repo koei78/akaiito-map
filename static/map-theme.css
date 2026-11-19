@@ -33,8 +33,7 @@ body:has(#map) .dates{background:#fff!important;color:var(--ui-muted)!important;
 #pin-editor input:not([type=checkbox]),#pin-editor textarea,#account-dialog input{border-color:var(--ui-line)!important;color:var(--ui-ink)!important;background:#fff!important}
 #pin-editor .share-label{background:var(--ui-soft)!important}#pin-editor .share-label input{accent-color:var(--ui-blue)!important}
 #pin-editor button{border-radius:8px!important}#pin-editor button[type=submit],#account-dialog .account-submit{background:var(--ui-blue)!important;color:#fff!important;border-color:var(--ui-blue)!important}
-#pin-editor #pin-delete{color:#d93025!important}#pin-events .pin-event,#pin-history-list .history-item{background:var(--ui-soft)!important;border-color:#e8eaed!important;color:var(--ui-ink)!important}
-#pin-history-open{color:var(--ui-blue)!important;border-color:var(--ui-line)!important}#account-dialog .account-logout{color:#d93025!important;border-color:#f1c6c2!important}
+#pin-editor #pin-delete{color:#d93025!important}#account-dialog .account-logout{color:#d93025!important;border-color:#f1c6c2!important}
 #map-notice{position:fixed;z-index:1500;left:50%;bottom:24px;display:flex;align-items:center;gap:10px;width:min(440px,calc(100vw - 24px));padding:12px 13px;border:1px solid #d2e3fc;border-radius:12px;background:#fff;color:var(--ui-ink);box-shadow:0 4px 18px #1d2c3740;font-size:13px;line-height:1.45;transform:translateX(-50%)}#map-notice span{flex:1}#map-notice button{width:30px;min-width:30px;height:30px;padding:0;border:0;border-radius:50%;background:#f1f3f4;color:var(--ui-muted);font-size:20px;cursor:pointer}
 
 /* Mobile map */

@@ -21,6 +21,7 @@ import sqlite3
 from shapely.geometry import Polygon, Point, box
 from google_usage import reserve_map_load
 import pin_store
+import detection_store
 from paths import imagery_executable, data_dir, configured_path
 
 app = Flask(__name__)
@@ -28,6 +29,7 @@ app.secret_key = os.environ.get("AKAIITO_SECRET_KEY") or secrets.token_hex(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=os.environ.get("AKAIITO_HTTPS") == "1")
 pin_store.init_db()
+detection_store.init_db()
 base = Path(__file__).resolve().parent
 exe = imagery_executable()
 state = {"status": "idle", "message": "地図上で範囲を選択してください。", "points": []}
@@ -242,10 +244,17 @@ def deduplicate(points):
     return [point for point, _ in unique]
 
 
-def run_comparison(polygon, cells, years, ai_effort="medium"):
+def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
     global result_dir
     folder = Path(tempfile.mkdtemp(prefix="aerial_"))
     result_dir = folder
+    def save_history(status, points, message):
+        if run_id is None:
+            return
+        try:
+            detection_store.finish_run(run_id, status, points, message)
+        except Exception as error:
+            print(f"検出履歴の保存に失敗しました: {error}", file=sys.stderr)
     try:
         today = date.today()
         try:
@@ -328,10 +337,13 @@ def run_comparison(polygon, cells, years, ai_effort="medium"):
                 for i, point in enumerate(points, 1):
                     point["number"] = i
                 state.update(points=points.copy(), message=f"処理済み {completed}区画、残り {len(futures)}区画（取得不可 {len(failures)}）")
-        state.update(status="done" if not failures else "partial", points=points,
-                     message=f"完了 {completed}区画、候補 {len(points)}件。" +
-                             (f" 取得・処理できなかった範囲: {len(failures)}区画。" + " / ".join(failures[:5]) if failures else ""))
+        final_status = "done" if not failures else "partial"
+        final_message = f"完了 {completed}区画、候補 {len(points)}件。" + \
+                        (f" 取得・処理できなかった範囲: {len(failures)}区画。" + " / ".join(failures[:5]) if failures else "")
+        save_history(final_status, points, final_message)
+        state.update(status=final_status, points=points, message=final_message)
     except Exception as error:
+        save_history("error", [], str(error))
         state.update(status="error", message=str(error), points=[])
 
 
@@ -370,9 +382,24 @@ def compare():
     with lock:
         if state["status"] == "running":
             return jsonify(error="比較を実行中です。"), 409
-        state.update(status="running", message=f"{len(cells)}区画を並行処理します。", points=[])
-        threading.Thread(target=run_comparison, args=(polygon, cells, years, ai_effort), daemon=True).start()
+        try:
+            run_id = detection_store.start_run(session["user_id"], years, vertices)
+        except sqlite3.Error:
+            return jsonify(error="検出履歴を準備できませんでした。"), 503
+        state.update(owner_id=session["user_id"], status="running", message=f"{len(cells)}区画を並行処理します。", points=[])
+        threading.Thread(target=run_comparison, args=(polygon, cells, years, ai_effort, run_id), daemon=True).start()
     return jsonify(state)
+
+
+@app.get("/api/detections/history")
+def detection_history():
+    return jsonify(detection_store.list_runs(session["user_id"]))
+
+
+@app.get("/api/detections/history/<int:run_id>")
+def detection_history_detail(run_id):
+    run = detection_store.get_run(session["user_id"], run_id)
+    return jsonify(run) if run else (jsonify(error="検出履歴が見つかりません。"), 404)
 
 
 @app.post("/buildings")
@@ -399,11 +426,15 @@ def buildings_in_area():
 
 @app.get("/status")
 def status():
+    if state.get("owner_id") != session["user_id"]:
+        return jsonify(status="idle", message="地図上で範囲を選択してください。", points=[])
     return jsonify(state)
 
 
 @app.get("/result/<int:tile>")
 def result(tile):
+    if state.get("owner_id") != session["user_id"]:
+        return "結果がありません", 404
     image = result_dir / str(tile) / "comparison.png" if result_dir else None
     if image is None or not image.is_file():
         return "結果がありません", 404
@@ -431,6 +462,8 @@ def output_outlines():
 
 @app.get("/vertices.csv")
 def vertices_csv():
+    if state.get("owner_id") != session["user_id"]:
+        return "結果がありません", 404
     output = io.StringIO(newline="")
     writer = csv.writer(output)
     writer.writerow(["建物番号", "頂点番号", "緯度", "経度", "外周データ", "判定", "過去の撮影日", "現在の撮影日", "区画"])
@@ -445,6 +478,8 @@ def vertices_csv():
 
 @app.get("/outlines.geojson")
 def outlines_geojson():
+    if state.get("owner_id") != session["user_id"]:
+        return "結果がありません", 404
     features = []
     for item, coords in output_outlines():
         properties = {k: item.get(k) for k in ("number", "source", "outline_type", "decision", "reason", "old_date", "new_date", "tile")}
@@ -458,10 +493,20 @@ def outlines_geojson():
 def google_maps_key():
     # 専用キーは Google 側で API・サイト・日次枠を制限済み。
     key_file = configured_path("GOOGLE_MAPS_KEY_FILE", data_dir() / "google_maps_key.txt")
-    try:
-        key = key_file.read_text(encoding="utf-8").strip()
-    except OSError:
-        key = ""
+    candidates = [key_file]
+    if os.name == "nt" and not os.environ.get("GOOGLE_MAPS_KEY_FILE"):
+        # Codex などの隔離環境では LOCALAPPDATA が別の場所を指すことがある。
+        user_key_file = Path.home() / "AppData" / "Local" / "AerialComparison" / "google_maps_key.txt"
+        if user_key_file != key_file:
+            candidates.append(user_key_file)
+    key = ""
+    for candidate in candidates:
+        try:
+            key = candidate.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if key:
+            break
     if not key and os.environ.get("GOOGLE_MAPS_QUOTA_VERIFIED") == "1":
         key = os.environ.get("GOOGLE_MAPS_API_KEY", "")
     return key
