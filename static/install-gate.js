@@ -29,7 +29,7 @@
     const secure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
     const gate = document.createElement('div');
     gate.id = 'install-gate';
-    gate.innerHTML = '<div class="gate-card"><img class="gate-icon" src="/static/app-icon-192.png" alt="新築マップ"><h1>ホーム画面から開いてください</h1><p>新築マップはホーム画面に追加すると利用できます。</p><div class="gate-steps" id="install-steps"></div><button id="install-now" type="button" hidden>ホーム画面に追加する</button><small class="gate-note" id="install-status">追加後はホーム画面の「新築マップ」から起動してください。</small></div>';
+    gate.innerHTML = '<div class="gate-card"><img class="gate-icon" src="/static/app-icon-192.png?v=3" alt="新築マップ"><h1>ホーム画面から開いてください</h1><p>新築マップはホーム画面に追加すると利用できます。</p><div class="gate-steps" id="install-steps"></div><button id="install-now" type="button" hidden>ホーム画面に追加する</button><small class="gate-note" id="install-status">追加後はホーム画面の「新築マップ」から起動してください。</small></div>';
     document.body.append(gate);
     const steps = gate.querySelector('#install-steps');
     steps.innerHTML = !secure

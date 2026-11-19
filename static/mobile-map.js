@@ -37,13 +37,15 @@
   sheet.id = 'mobile-sheet';
   sheet.dataset.view = 'compare';
   sheet.setAttribute('aria-label', '地図の情報と操作');
-  sheet.innerHTML = `<button id="sheet-handle" type="button" aria-label="パネルをたたむ"><span></span></button><div class="sheet-heading"><button id="sheet-back" type="button" aria-label="比較画面に戻る">${icons.back}</button><div><strong id="sheet-title">航空写真の比較</strong><small id="sheet-subtitle">地図上で範囲を選びます</small></div><button id="sheet-more" type="button" aria-label="詳細設定を開く">${icons.more}</button><button id="sheet-close" type="button" aria-label="パネルを収納する">${icons.close}</button></div><div class="sheet-content"></div>`;
+  sheet.innerHTML = `<button id="sheet-handle" type="button" aria-label="パネルをたたむ"><span></span></button><div class="sheet-heading"><button id="sheet-back" type="button" aria-label="比較画面に戻る">${icons.back}</button><div><strong id="sheet-title">航空写真の比較</strong><small id="sheet-subtitle">地図上で範囲を選びます</small></div><button id="sheet-more" type="button" aria-label="詳細設定を開く" aria-expanded="false">${icons.more}</button><button id="sheet-close" type="button" aria-label="パネルを収納する">${icons.close}<span>閉じる</span></button></div><div class="sheet-content"></div>`;
   document.body.append(sheet);
   const reopen = document.createElement('button');
   reopen.id = 'mobile-sheet-reopen';
   reopen.type = 'button';
-  reopen.innerHTML = `${icons.open}<span>比較パネルを開く</span>`;
+  reopen.innerHTML = `<span class="reopen-grip" aria-hidden="true"></span><span class="reopen-copy"><strong id="reopen-title">航空写真の比較</strong><small>タップして操作を開く</small></span>${icons.open}`;
   reopen.setAttribute('aria-label', '操作パネルを開く');
+  reopen.setAttribute('aria-controls', 'mobile-sheet');
+  reopen.setAttribute('aria-expanded', 'true');
   document.body.append(reopen);
   sheet.querySelector('.sheet-content').append(compare, pins);
   const syncHeight = () => document.documentElement.style.setProperty('--mobile-sheet-height', `${sheet.classList.contains('is-hidden') ? 0 : sheet.getBoundingClientRect().height}px`);
@@ -54,18 +56,23 @@
   const pinToggle = pins.querySelector('#pin-toggle');
   const title = sheet.querySelector('#sheet-title');
   const subtitle = sheet.querySelector('#sheet-subtitle');
-  function hideSheet() { sheet.classList.add('is-hidden'); reopen.classList.add('is-visible'); syncHeight(); }
-  function showSheet() { sheet.classList.remove('is-hidden'); reopen.classList.remove('is-visible'); syncHeight(); }
+  function hideSheet() { sheet.classList.add('is-hidden'); reopen.classList.add('is-visible'); reopen.setAttribute('aria-expanded', 'false'); syncHeight(); }
+  function showSheet() { sheet.classList.remove('is-hidden'); reopen.classList.remove('is-visible'); reopen.setAttribute('aria-expanded', 'true'); syncHeight(); }
   function choose(mode) {
     showSheet();
     sheet.dataset.view = mode;
     sheet.classList.remove('is-expanded');
+    sheet.querySelector('#sheet-more').setAttribute('aria-expanded', 'false');
     title.textContent = mode === 'pins' ? '保存ピン' : '航空写真の比較';
+    reopen.querySelector('#reopen-title').textContent = title.textContent;
     subtitle.textContent = mode === 'pins' ? '自分のピンと共有ピン' : '時期を選んで変化を調べる';
     if (mode === 'pins' && pins.classList.contains('pin-collapsed')) pinToggle.click();
   }
   sheet.querySelector('#sheet-back').onclick = () => choose('compare');
-  sheet.querySelector('#sheet-more').onclick = () => sheet.classList.toggle('is-expanded');
+  sheet.querySelector('#sheet-more').onclick = event => {
+    const expanded = sheet.classList.toggle('is-expanded');
+    event.currentTarget.setAttribute('aria-expanded', String(expanded));
+  };
   sheet.querySelector('#sheet-close').onclick = hideSheet;
   reopen.onclick = showSheet;
   sheet.querySelector('#sheet-handle').onclick = hideSheet;

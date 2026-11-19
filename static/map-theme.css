@@ -48,7 +48,7 @@ body:has(#map) .dates{background:#fff!important;color:var(--ui-muted)!important;
   #mobile-sheet .year-control,#mobile-sheet .bar label:has(#years){color:var(--ui-ink)!important}#mobile-sheet .year-control output{color:var(--ui-blue)!important}
   #mobile-sheet .status{color:var(--ui-muted)!important;background:transparent!important}#mobile-sheet #start,#mobile-sheet #pin-add{background:var(--ui-blue)!important;color:#fff!important;border-color:var(--ui-blue)!important}
   #mobile-sheet .layer-select,#mobile-sheet .bar select{background:var(--ui-soft)!important;color:var(--ui-ink)!important;border-color:var(--ui-line)!important}
-  #mobile-sheet-reopen.is-visible{color:var(--ui-blue)!important;border:1px solid #e5e8eb!important;background:#fff!important;box-shadow:0 2px 9px #1d2c372a!important}
+  #mobile-sheet-reopen.is-visible{color:var(--ui-ink)!important;border:0!important;background:#fff!important;box-shadow:0 -3px 16px #1d2c372e!important}
   #pin-search-desktop{display:none}
 }
 
