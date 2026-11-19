@@ -1,0 +1,18 @@
+# Default deny: keep local data, credentials, binaries, and generated photos out.
+/*
+!/.gitignore
+!/app.py
+!/compare.py
+!/compare_precise.py
+!/get.py
+!/google_map.html
+!/google_usage.py
+!/gsi_area.py
+!/gsi_buildings.py
+!/gsi_precise.py
+!/server_watch.py
+!/README.md
+!/static/
+/static/*
+!/static/new-building-icon.png
+__pycache__/
