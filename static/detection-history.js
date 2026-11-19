@@ -1,12 +1,11 @@
 (() => {
   const toolbar = document.querySelector('.actions, .bar');
-  if (!toolbar) return;
 
   const trigger = document.createElement('button');
   trigger.id = 'detection-history-trigger';
   trigger.type = 'button';
   trigger.textContent = '検出履歴';
-  toolbar.append(trigger);
+  (toolbar || document.body).append(trigger);
 
   const dialog = document.createElement('dialog');
   dialog.id = 'detection-history-dialog';
@@ -21,6 +20,8 @@
   active.innerHTML = '<span></span><button type="button" aria-label="履歴の地図表示を終了">×</button>';
   document.body.append(active);
   const isGoogle = location.pathname === '/google';
+  const mobileTrigger = document.getElementById('rail-history');
+  if (mobileTrigger) mobileTrigger.onclick = () => openList();
   let layers = [];
 
   function clearOverlay() {
@@ -63,12 +64,12 @@
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'detection-run';
-        addText(button, 'strong', `${timestamp(row.completed_at || row.created_at)} · 新築候補 ${row.building_count}件`);
+        addText(button, 'strong', `${timestamp(row.completed_at || row.created_at)} · 新築候補 ${row.building_count}件・要確認 ${row.review_count || 0}件`);
         addText(button, 'small', `${row.years}年前と比較${row.status === 'partial' ? ' · 一部の範囲は取得不可' : ''}`);
         button.onclick = () => openRun(row.id);
         content.append(button);
       }
-    } catch (_) { content.textContent = '検出履歴を読み込めませんでした。'; }
+    } catch (error) { content.textContent = `検出履歴を読み込めませんでした。${error.message || ''}`; }
   }
   async function openRun(id) {
     content.textContent = '読み込み中…';
@@ -81,7 +82,7 @@
       content.replaceChildren();
       const summary = document.createElement('div');
       summary.className = 'detection-summary';
-      addText(summary, 'strong', `新築候補 ${run.building_count}件`);
+      addText(summary, 'strong', `新築候補 ${run.building_count}件・要確認 ${run.review_count || 0}件`);
       addText(summary, 'small', `${timestamp(run.completed_at)} · ${run.years}年前と比較`);
       content.append(summary);
       const showAll = addText(content, 'button', '地図に表示する');
@@ -93,7 +94,7 @@
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'detection-building';
-        addText(button, 'strong', `新築候補 ${point.number || ''}`);
+        addText(button, 'strong', `${point.decision === 'review' ? '要確認' : '新築候補'} ${point.number || ''}`);
         addText(button, 'small', `${point.old_date || '過去'} → ${point.new_date || '現在'}`);
         if (point.reason) addText(button, 'span', point.reason);
         button.onclick = () => showOnMap(run, point);
@@ -115,16 +116,17 @@
       if (!valid) continue;
       coords.push(...outline);
       const info = document.createElement('div');
-      addText(info, 'strong', `新築候補 ${point.number || ''}`);
+      addText(info, 'strong', `${point.decision === 'review' ? '要確認' : '新築候補'} ${point.number || ''}`);
       addText(info, 'div', `撮影日: ${point.old_date || '不明'} → ${point.new_date || '不明'}`);
       if (point.reason) addText(info, 'div', point.reason);
+      const color = point.decision === 'review' ? '#f29900' : '#d93025';
       if (isGoogle) {
-        const layer = new google.maps.Polygon({map, paths:outline.map(pair => ({lat:pair[0], lng:pair[1]})), strokeColor:'#d93025', strokeWeight:3, fillColor:'#d93025', fillOpacity:.16});
+        const layer = new google.maps.Polygon({map, paths:outline.map(pair => ({lat:pair[0], lng:pair[1]})), strokeColor:color, strokeWeight:3, fillColor:color, fillOpacity:.16});
         const popup = new google.maps.InfoWindow({content:info});
         layer.addListener('click', event => {popup.setPosition(event.latLng);popup.open(map);});
         layers.push(layer);
       } else {
-        const layer = L.polygon(outline, {color:'#d93025',weight:3,fillOpacity:.16}).addTo(map);
+        const layer = L.polygon(outline, {color,weight:3,fillOpacity:.16}).addTo(map);
         layer.bindPopup(info);
         layers.push(layer);
       }
@@ -137,7 +139,7 @@
         map.fitBounds(bounds);
       } else map.fitBounds(L.latLngBounds(target), {padding:[30,30],maxZoom:19});
     }
-    active.querySelector('span').textContent = `検出履歴を表示中 · ${run.building_count}件`;
+    active.querySelector('span').textContent = `履歴表示中 · 新築 ${run.building_count}件・要確認 ${run.review_count || 0}件`;
     active.hidden = false;
     dialog.close();
   }

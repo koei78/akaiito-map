@@ -34,20 +34,27 @@ def start_run(owner_id, years, polygon):
 
 
 def finish_run(run_id, status, points, message):
-    buildings = [point for point in points if point.get("decision") == "new"
+    buildings = [point for point in points if point.get("decision") in ("new", "review")
                  and isinstance(point.get("outline"), list) and len(point["outline"]) >= 3]
     with connect() as db:
         db.execute("""UPDATE detection_runs SET status=?,points_json=?,building_count=?,
                       message=?,completed_at=CURRENT_TIMESTAMP WHERE id=?""",
-                   (status, json.dumps(buildings, ensure_ascii=False), len(buildings), message, run_id))
+                   (status, json.dumps(buildings, ensure_ascii=False),
+                    sum(point["decision"] == "new" for point in buildings), message, run_id))
 
 
 def list_runs(owner_id):
     with connect() as db:
-        rows = db.execute("""SELECT id,status,years,building_count,message,created_at,completed_at
+        rows = db.execute("""SELECT id,status,years,building_count,points_json,message,created_at,completed_at
                              FROM detection_runs WHERE owner_id=? AND status IN ('done','partial')
                              ORDER BY id DESC""", (owner_id,)).fetchall()
-    return [dict(row) for row in rows]
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["review_count"] = sum(point.get("decision") == "review"
+                                   for point in json.loads(item.pop("points_json")))
+        result.append(item)
+    return result
 
 
 def get_run(owner_id, run_id):
@@ -61,4 +68,5 @@ def get_run(owner_id, run_id):
     result = dict(row)
     result["polygon"] = json.loads(result.pop("polygon_json"))
     result["points"] = json.loads(result.pop("points_json"))
+    result["review_count"] = sum(point.get("decision") == "review" for point in result["points"])
     return result

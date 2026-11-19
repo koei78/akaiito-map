@@ -4,9 +4,13 @@
 !/app.py
 !/pin_store.py
 !/detection_store.py
+!/imported_markers.py
+!/import_sales_map.py
 !/paths.py
 !/requirements.txt
 !/test_pins.py
+!/test_image_quality.py
+!/image_quality.py
 !/compare.py
 !/compare_precise.py
 !/get.py
@@ -17,6 +21,9 @@
 !/gsi_precise.py
 !/server_watch.py
 !/README.md
+!/.vscode/
+/.vscode/*
+!/.vscode/settings.json
 !/static/
 /static/*
 !/static/new-building-icon.png
@@ -29,6 +36,8 @@
 !/static/install-gate.js
 !/static/pins.js
 !/static/pins.css
+!/static/imported-markers.js
+!/static/imported-markers.css
 !/static/account.js
 !/static/account.css
 !/static/mobile-map.css
@@ -37,6 +46,8 @@
 !/static/mobile-map.js
 !/static/detection-history.js
 !/static/detection-history.css
+!/static/location-control.js
+!/static/mobile-refresh.css
 !/templates/
 /templates/*
 !/templates/auth.html

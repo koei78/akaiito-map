@@ -44,14 +44,16 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             run_id = detection_store.start_run(alice_id, 15, polygon)
             points = [
                 {"number": 1, "lat": 35.5, "lon": 137.8, "decision": "new", "outline": polygon, "old_date": "2010-01-01", "new_date": "2025-01-01"},
+                {"number": 3, "lat": 35.51, "lon": 137.81, "decision": "review", "outline": polygon, "reason": "撮影条件の差"},
                 {"number": 2, "lat": 35.6, "lon": 137.9, "decision": "existing", "outline": polygon},
             ]
             detection_store.finish_run(run_id, "done", points, "候補1件")
             listing = alice.get("/api/detections/history").json
             self.assertEqual(listing[0]["building_count"], 1)
+            self.assertEqual(listing[0]["review_count"], 1)
             detail = alice.get(f"/api/detections/history/{run_id}").json
             self.assertEqual(detail["polygon"], polygon)
-            self.assertEqual(len(detail["points"]), 1)
+            self.assertEqual(len(detail["points"]), 2)
             self.assertEqual(bob.get("/api/detections/history").json, [])
             self.assertEqual(bob.get(f"/api/detections/history/{run_id}").status_code, 404)
             previous_state = app.state.copy()
@@ -63,6 +65,12 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             finally:
                 app.state.clear()
                 app.state.update(previous_state)
+
+        def test_duplicate_detection_prefers_reconfirmed_result(self):
+            outline = [[35.5, 137.8], [35.5, 137.801], [35.501, 137.801], [35.501, 137.8]]
+            review = {"decision": "review", "outline": outline, "reason": "要確認"}
+            confirmed = {"decision": "new", "outline": outline, "reason": "再確認済み"}
+            self.assertEqual(app.deduplicate([review, confirmed])[0]["decision"], "new")
 
         def test_login_and_csrf(self):
             client, headers = self.client("charlie")

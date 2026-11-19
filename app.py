@@ -22,6 +22,7 @@ from shapely.geometry import Polygon, Point, box
 from google_usage import reserve_map_load
 import pin_store
 import detection_store
+import imported_markers
 from paths import imagery_executable, data_dir, configured_path
 
 app = Flask(__name__)
@@ -146,6 +147,22 @@ def pins_list():
     return jsonify(pin_store.list_pins(session["user_id"]))
 
 
+@app.get("/api/imported-markers")
+def imported_markers_viewport():
+    try:
+        south = float(request.args["south"])
+        west = float(request.args["west"])
+        north = float(request.args["north"])
+        east = float(request.args["east"])
+        if not all(math.isfinite(value) for value in (south, west, north, east)):
+            raise ValueError()
+        if not (-90 <= south < north <= 90 and -180 <= west < east <= 180):
+            raise ValueError()
+    except (KeyError, TypeError, ValueError):
+        return jsonify(error="地図の表示範囲を確認してください。"), 400
+    return jsonify(imported_markers.query((south, west, north, east)))
+
+
 @app.get("/api/pins/history")
 def pins_recent_history():
     return jsonify(pin_store.recent_history(session["user_id"]))
@@ -231,11 +248,13 @@ def deduplicate(points):
             if shape.is_empty or shape.area <= 0:
                 continue
             duplicate = False
-            for existing, other in unique:
+            for index, (existing, other) in enumerate(unique):
                 if not shape.intersects(other):
                     continue
                 if shape.intersection(other).area / min(shape.area, other.area) >= 0.6:
                     duplicate = True
+                    if point.get("decision") == "new" and existing.get("decision") != "new":
+                        unique[index] = (point, shape)
                     break
             if not duplicate:
                 unique.append((point, shape))
@@ -287,7 +306,7 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
             env = os.environ.copy()
             env.update(PHOTO_IMAGES_DIR=str(part), PHOTO_OUTPUT_DIR=str(part), PHOTO_REASONING_EFFORT=ai_effort)
             run = subprocess.run([sys.executable, str(base / "compare_precise.py")], cwd=base, env=env,
-                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=540)
             if run.returncode:
                 raise RuntimeError("比較失敗: " + run.stderr[-500:])
             with (part / "coordinates.csv").open(encoding="utf-8-sig", newline="") as file:
@@ -311,8 +330,8 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
         points, failures = [], []
         next_id = len(cells)
         completed = 0
-        # 画像取得と AI の待ち時間を、最大 6 区画で重ねる。
-        with ThreadPoolExecutor(max_workers=6) as pool:
+        # 再確認を含む AI 判定の同時実行数を抑えて処理を安定させる。
+        with ThreadPoolExecutor(max_workers=4) as pool:
             futures = {pool.submit(process, (index, bounds)): (index, bounds, 0)
                        for index, bounds in enumerate(cells)}
             while futures:
@@ -338,7 +357,9 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
                     point["number"] = i
                 state.update(points=points.copy(), message=f"処理済み {completed}区画、残り {len(futures)}区画（取得不可 {len(failures)}）")
         final_status = "done" if not failures else "partial"
-        final_message = f"完了 {completed}区画、候補 {len(points)}件。" + \
+        new_count = sum(point.get("decision") == "new" for point in points)
+        review_count = sum(point.get("decision") == "review" for point in points)
+        final_message = f"完了 {completed}区画、新築候補 {new_count}件、要確認 {review_count}件。" + \
                         (f" 取得・処理できなかった範囲: {len(failures)}区画。" + " / ".join(failures[:5]) if failures else "")
         save_history(final_status, points, final_message)
         state.update(status=final_status, points=points, message=final_message)
@@ -548,14 +569,23 @@ def start_ngrok(port):
     if url:
         print('公開URL:', url, flush=True)
         return
-    executable = os.environ.get('AKAIITO_NGROK') or shutil.which('ngrok')
+    bundled_ngrok = base / 'tools' / ('ngrok.exe' if os.name == 'nt' else 'ngrok')
+    executable = os.environ.get('AKAIITO_NGROK') or (str(bundled_ngrok) if bundled_ngrok.is_file() else shutil.which('ngrok'))
     if not executable and os.environ.get('LOCALAPPDATA'):
         executable = str(Path(os.environ['LOCALAPPDATA']) / 'ngrok' / 'ngrok.exe')
     if not executable or not Path(executable).is_file():
         print('ngrok が見つかりません。ローカル画面は利用できます。', flush=True)
         return
     try:
-        process = subprocess.Popen([executable, 'http', str(port)], stdout=subprocess.DEVNULL,
+        command = [executable, 'http', str(port)]
+        config = os.environ.get('AKAIITO_NGROK_CONFIG')
+        if not config and os.name == 'nt':
+            default_config = Path.home() / 'AppData' / 'Local' / 'ngrok' / 'ngrok.yml'
+            if default_config.is_file():
+                config = str(default_config)
+        if config:
+            command.extend(['--config', config])
+        process = subprocess.Popen(command, stdout=subprocess.DEVNULL,
                                    stderr=subprocess.DEVNULL, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         for _ in range(10):
             time.sleep(1)

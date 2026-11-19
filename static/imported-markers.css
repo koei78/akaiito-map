@@ -1,0 +1,9 @@
+#imported-marker-tools{display:flex;flex-direction:column;gap:5px;margin:10px 0;padding:10px;border:1px solid #dbe6e0;border-radius:9px;background:#f7fbf8;color:#315342;font:12px system-ui}
+#imported-marker-toggle{min-height:38px;border:1px solid #317951;border-radius:8px;background:#fff;color:#226141;font:700 13px system-ui;cursor:pointer}
+#imported-marker-toggle[aria-pressed=true],#rail-imported-markers[aria-pressed=true]{background:#2e7656!important;color:#fff!important}
+#imported-marker-status{min-height:16px;color:#61786a;font:11px system-ui}
+.imported-marker-icon span{display:block;width:18px;height:18px;border:2px solid #fff;border-radius:50%;box-shadow:0 2px 7px #17362888}
+.imported-cluster-icon span{display:grid;place-items:center;width:40px;height:40px;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px #17362888;color:#fff;font:700 12px system-ui}
+.imported-marker-popup{min-width:140px;max-width:280px;color:#263a30;font:12px/1.5 system-ui;overflow-wrap:anywhere}
+.imported-marker-popup strong{display:block;margin-bottom:4px;font-size:14px}
+.imported-rail-symbol{font-size:19px!important;line-height:1!important}
