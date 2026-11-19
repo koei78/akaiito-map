@@ -74,7 +74,7 @@ def import_json(source, target=DEFAULT_DB):
     return next_id
 
 
-def query(bounds, db=DEFAULT_DB, point_limit=300):
+def query(bounds, db=DEFAULT_DB, point_limit=120):
     """Return only visible points, or compact counts for a crowded viewport."""
     south, west, north, east = bounds
     if not Path(db).is_file():
@@ -91,11 +91,19 @@ def query(bounds, db=DEFAULT_DB, point_limit=300):
                 f"SELECT m.source_id, m.layer, m.lat, m.lng, m.label, m.details "
                 f"{join} WHERE {where} ORDER BY m.id", args,
             ).fetchall()
-            return {"mode": "points", "count": count, "items": [
-                {"id": row["source_id"], "layer": row["layer"],
-                 "lat": row["lat"], "lng": row["lng"], "label": row["label"],
-                 "details": json.loads(row["details"])} for row in rows
-            ]}
+            items = []
+            for row in rows:
+                detail = json.loads(row["details"])
+                # Only send fields that the popup and marker colours display.
+                visible = {key: detail[key] for key in
+                           ("marker_type", "prefecture", "display_address", "memo") if detail.get(key)}
+                if detail.get("workers"):
+                    visible["workers"] = [{"display_name": worker.get("display_name", "")}
+                                          for worker in detail["workers"] if isinstance(worker, dict)]
+                items.append({"id": row["source_id"], "layer": row["layer"],
+                              "lat": row["lat"], "lng": row["lng"], "label": row["label"],
+                              "details": visible})
+            return {"mode": "points", "count": count, "items": items}
         cell_lat = max((north - south) / 10, 1e-9)
         cell_lng = max((east - west) / 10, 1e-9)
         rows = connection.execute(

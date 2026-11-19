@@ -31,6 +31,8 @@
   const googleView = location.pathname === '/google';
   let enabled = true, mode = 'pins', layers = [], controller = null, timer = null, currentMap = null;
   let initialViewChecked = false;
+  let renderedKey = null, renderedAt = 0;
+  const cachedViews = new Map();
 
   function clearLayers() {
     for (const layer of layers) googleView ? layer.setMap(null) : currentMap.removeLayer(layer);
@@ -163,17 +165,31 @@
     if (!enabled || !currentMap) return;
     const box = bounds();
     if (!box) return;
+    const rounded = Object.fromEntries(Object.entries(box).map(([key, value]) => [key, value.toFixed(6)]));
+    const key = `${mode}:${Object.values(rounded).join(',')}`;
+    if (renderedKey === key && Date.now() - renderedAt < 30000) return;
     controller?.abort();
     const active = controller = new AbortController();
-    const query = new URLSearchParams({...box, ...(mode === 'density' ? {mode: 'density'} : {})});
+    const query = new URLSearchParams({...rounded, ...(mode === 'density' ? {mode: 'density'} : {})});
     status.textContent = '表示範囲を読み込み中…';
     try {
-      const response = await fetch(`/api/imported-markers?${query}`, {signal: active.signal});
-      if (response.status === 401) throw new Error('ログインが切れました。画面を再読み込みしてログインしてください');
-      if (!response.ok) throw new Error('読み込みに失敗しました');
-      const data = await response.json();
+      let entry = cachedViews.get(key);
+      let data;
+      if (entry && Date.now() - entry.time < 30000) {
+        data = entry.data;
+      } else {
+        const response = await fetch(`/api/imported-markers?${query}`, {signal: active.signal});
+        if (response.status === 401) throw new Error('ログインが切れました。画面を再読み込みしてログインしてください');
+        if (!response.ok) throw new Error('読み込みに失敗しました');
+        data = await response.json();
+        cachedViews.delete(key);
+        cachedViews.set(key, {data, time: Date.now()});
+        if (cachedViews.size > 12) cachedViews.delete(cachedViews.keys().next().value);
+      }
       if (!enabled || active !== controller) return;
       clearLayers();
+      renderedKey = key;
+      renderedAt = Date.now();
       if (data.mode === 'missing') {
         status.textContent = '既存マーカーデータが未登録です';
         summary.textContent = status.textContent;
@@ -205,7 +221,7 @@
   }
   function schedule() {
     clearTimeout(timer);
-    timer = setTimeout(refresh, 180);
+    timer = setTimeout(refresh, 450);
   }
   function toggle() {
     enabled = !enabled;
@@ -218,7 +234,7 @@
     if (enabled) summary.textContent = '既存ピンを読み込み中…';
     syncModeControls();
     if (enabled) schedule();
-    else {controller?.abort(); controller = null; clearTimeout(timer); clearLayers(); status.textContent = '';}
+    else {controller?.abort(); controller = null; clearTimeout(timer); clearLayers(); renderedKey = null; status.textContent = '';}
   }
   function syncModeControls() {
     for (const choice of controls.querySelectorAll('[data-mode]')) {
@@ -234,6 +250,7 @@
       controller?.abort();
       controller = null;
       clearLayers();
+      renderedKey = null;
       schedule();
     };
   }

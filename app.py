@@ -1,4 +1,5 @@
 import csv
+import gzip
 import io
 import json
 import math
@@ -179,8 +180,15 @@ def imported_markers_viewport():
         return jsonify(error="地図の表示範囲を確認してください。"), 400
     bounds = (south, west, north, east)
     if request.args.get("mode") == "density":
-        return jsonify(imported_markers.density(bounds))
-    return jsonify(imported_markers.query(bounds))
+        response = jsonify(imported_markers.density(bounds))
+    else:
+        response = jsonify(imported_markers.query(bounds))
+    response.headers["Cache-Control"] = "private, no-store"
+    response.vary.add("Accept-Encoding")
+    if request.accept_encodings["gzip"] and response.content_length and response.content_length > 512:
+        response.set_data(gzip.compress(response.get_data(), compresslevel=4))
+        response.headers["Content-Encoding"] = "gzip"
+    return response
 
 
 @app.get("/api/imported-markers/extent")
