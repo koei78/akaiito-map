@@ -15,16 +15,178 @@ from datetime import date
 from pathlib import Path
 from urllib.request import urlopen
 
-from flask import Flask, Response, jsonify, request, send_file, render_template_string, redirect
+from flask import Flask, Response, jsonify, request, send_file, render_template, redirect, session
+import secrets
+import sqlite3
 from shapely.geometry import Polygon, Point, box
 from google_usage import reserve_map_load
+import pin_store
+from paths import imagery_executable, data_dir, configured_path
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("AKAIITO_SECRET_KEY") or secrets.token_hex(32)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  SESSION_COOKIE_SECURE=os.environ.get("AKAIITO_HTTPS") == "1")
+pin_store.init_db()
 base = Path(__file__).resolve().parent
-exe = base / "GEHistoricalImagery" / "gdal" / "GEHistoricalImagery.exe"
+exe = imagery_executable()
 state = {"status": "idle", "message": "地図上で範囲を選択してください。", "points": []}
 lock = threading.Lock()
 result_dir = None
+
+
+@app.before_request
+def require_account():
+    if request.endpoint in ("login", "register", "static", "health", "service_worker"):
+        return None
+    if not session.get("user_id"):
+        if request.path.startswith("/api/"):
+            return jsonify(error="ログインが必要です。"), 401
+        return redirect("/login")
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        if request.headers.get("X-CSRF-Token") != session.get("csrf"):
+            return jsonify(error="画面を再読み込みしてください。"), 403
+
+
+@app.get("/health")
+def health():
+    return jsonify(ok=True)
+
+
+@app.get("/sw.js")
+def service_worker():
+    response = send_file(base / "static" / "sw.js", mimetype="application/javascript")
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = ""
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        user = pin_store.authenticate(username, request.form.get("password", ""))
+        if user:
+            session.clear()
+            session["user_id"], session["username"], session["csrf"] = user["id"], user["username"], secrets.token_urlsafe(32)
+            return redirect("/")
+        error = "ユーザー名またはパスワードが違います。"
+    return render_template("auth.html", action="login", error=error)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    error = ""
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if not 3 <= len(username) <= 40 or not all(c.isascii() and (c.isalnum() or c in "_-") for c in username):
+            error = "ユーザー名は3〜40文字の英数字・_・-で入力してください。"
+        elif len(password) < 8:
+            error = "パスワードは8文字以上で入力してください。"
+        else:
+            try:
+                user_id = pin_store.create_user(username, password)
+                session.clear()
+                session["user_id"], session["username"], session["csrf"] = user_id, username, secrets.token_urlsafe(32)
+                return redirect("/")
+            except sqlite3.IntegrityError:
+                error = "そのユーザー名は使用されています。"
+    return render_template("auth.html", action="register", error=error)
+
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
+
+@app.get("/api/me")
+def me():
+    return jsonify(id=session["user_id"], username=session["username"], csrf=session["csrf"])
+
+
+@app.get("/api/account")
+def account_details():
+    return jsonify(pin_store.account(session["user_id"]))
+
+
+@app.patch("/api/account/username")
+def account_username():
+    data = request.get_json(silent=True) or {}
+    username = str(data.get("username", "")).strip()
+    password = str(data.get("current_password", ""))
+    if not 3 <= len(username) <= 40 or not all(c.isascii() and (c.isalnum() or c in "_-") for c in username):
+        return jsonify(error="ユーザー名は3〜40文字の英数字・_・-で入力してください。"), 400
+    try:
+        if not pin_store.change_username(session["user_id"], username, password):
+            return jsonify(error="現在のパスワードが違います。"), 403
+    except sqlite3.IntegrityError:
+        return jsonify(error="そのユーザー名は使用されています。"), 409
+    session["username"] = username
+    return jsonify(username=username)
+
+
+@app.post("/api/account/password")
+def account_password():
+    data = request.get_json(silent=True) or {}
+    current = str(data.get("current_password", ""))
+    new = str(data.get("new_password", ""))
+    if len(new) < 8:
+        return jsonify(error="新しいパスワードは8文字以上で入力してください。"), 400
+    if not pin_store.change_password(session["user_id"], current, new):
+        return jsonify(error="現在のパスワードが違います。"), 403
+    return jsonify(ok=True)
+
+
+@app.get("/api/pins")
+def pins_list():
+    return jsonify(pin_store.list_pins(session["user_id"]))
+
+
+@app.get("/api/pins/history")
+def pins_recent_history():
+    return jsonify(pin_store.recent_history(session["user_id"]))
+
+
+def pin_values():
+    data = request.get_json(silent=True) or {}
+    lat, lng = float(data["lat"]), float(data["lng"])
+    title, note = str(data["title"]).strip(), str(data.get("note", "")).strip()
+    shared = data.get("shared", False)
+    if not (math.isfinite(lat) and math.isfinite(lng) and -90 <= lat <= 90 and -180 <= lng <= 180 and 1 <= len(title) <= 100 and len(note) <= 2000 and isinstance(shared, bool)):
+        raise ValueError()
+    return dict(lat=lat, lng=lng, title=title, note=note, shared=int(shared))
+
+
+@app.post("/api/pins")
+def pins_create():
+    try:
+        return jsonify(pin_store.save_pin(session["user_id"], pin_values())), 201
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return jsonify(error="ピンの内容を確認してください。"), 400
+
+
+@app.put("/api/pins/<int:pin_id>")
+def pins_update(pin_id):
+    try:
+        pin = pin_store.save_pin(session["user_id"], pin_values(), pin_id)
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return jsonify(error="ピンの内容を確認してください。"), 400
+    return (jsonify(pin) if pin else (jsonify(error="ピンが見つかりません。"), 404))
+
+
+@app.delete("/api/pins/<int:pin_id>")
+def pins_delete(pin_id):
+    if not pin_store.delete_pin(session["user_id"], pin_id):
+        return jsonify(error="ピンが見つかりません。"), 404
+    return jsonify(ok=True)
+
+
+@app.get("/api/pins/<int:pin_id>/history")
+def pins_history(pin_id):
+    rows = pin_store.history(pin_id, session["user_id"])
+    return jsonify(rows) if rows is not None else (jsonify(error="履歴が見つかりません。"), 404)
 
 
 def download(label, dates, zoom, bounds, folder):
@@ -126,7 +288,7 @@ def run_comparison(polygon, cells, years, ai_effort="medium"):
                           for row in csv.DictReader(file)]
             points = [point for point in points if polygon.covers(Point(point["lon"], point["lat"]))]
             if points:
-                helper = base / ".map_data_venv" / "Scripts" / "python.exe"
+                helper = sys.executable
                 try:
                     match = subprocess.run([str(helper), "-X", "utf8", str(base / "gsi_precise.py")],
                                            input=json.dumps(points), capture_output=True, text=True,
@@ -175,6 +337,8 @@ def run_comparison(polygon, cells, years, ai_effort="medium"):
 
 @app.post("/compare")
 def compare():
+    if not exe.is_file():
+        return jsonify(error="航空写真の取得ツールがありません。AKAIITO_IMAGERY_EXE を設定してください。"), 503
     try:
         vertices = request.json["polygon"]
         years = int(request.json.get("years", 15))
@@ -222,7 +386,7 @@ def buildings_in_area():
         west, south, east, north = region.bounds
         if not region.is_valid or region.is_empty or not (-85 <= south < north <= 85 and -180 <= west < east <= 180):
             raise ValueError("交差しない線で範囲を囲んでください。")
-        helper = base / ".map_data_venv" / "Scripts" / "python.exe"
+        helper = sys.executable
         result = subprocess.run([str(helper), "-X", "utf8", str(base / "gsi_area.py")],
                                 input=json.dumps(vertices), capture_output=True, text=True,
                                 encoding="utf-8", errors="replace", timeout=90, check=True)
@@ -231,17 +395,6 @@ def buildings_in_area():
         return jsonify(error=str(error) or "範囲が正しくありません。"), 400
     except (OSError, subprocess.SubprocessError):
         return jsonify(error="建物の外周データを取得できませんでした。"), 503
-
-
-@app.post("/clear")
-def clear_results():
-    global result_dir
-    with lock:
-        if state["status"] == "running":
-            return jsonify(error="比較中は結果を消せません。完了までお待ちください。"), 409
-        state.update(status="idle", message="結果を消しました。地図上で範囲を選択してください。", points=[])
-        result_dir = None
-    return jsonify(state)
 
 
 @app.get("/status")
@@ -305,7 +458,7 @@ def outlines_geojson():
 @app.get("/google")
 def google_map():
     # 専用キーは Google 側で API・サイト・日次枠を制限済み。
-    key_file = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "AerialComparison" / "google_maps_key.txt"
+    key_file = configured_path("GOOGLE_MAPS_KEY_FILE", data_dir() / "google_maps_key.txt")
     try:
         key = key_file.read_text(encoding="utf-8").strip()
     except OSError:
@@ -319,79 +472,14 @@ def google_map():
             return redirect("/?google=limit")
     except Exception:
         return redirect("/?google=unavailable")
-    template = (base / "google_map.html").read_text(encoding="utf-8-sig")
-    response = app.make_response(render_template_string(template, google_key=key))
+    response = app.make_response(render_template("google_map.html", google_key=key))
     response.headers["Cache-Control"] = "no-store"
     return response
 
 
 @app.get("/")
 def index():
-    return render_template_string('''<!doctype html><html lang="ja"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>航空写真の比較</title><link rel="icon" type="image/png" href="/static/new-building-icon.png">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
-<style>
-*{box-sizing:border-box}body{margin:0;background:#17211f;color:#f1f5f3;font-family:"Segoe UI",system-ui,sans-serif}#map{position:fixed;inset:0;background:#1b2827}
-.panel{position:fixed;z-index:500;top:14px;left:14px;right:14px;display:flex;align-items:flex-start;gap:16px;padding:12px 14px;border:1px solid #ffffff1e;border-radius:14px;background:rgba(32,37,38,.96);box-shadow:0 8px 28px #0006}
-.brand{display:flex;align-items:center;gap:10px;flex:none;min-height:40px;padding-right:16px;border-right:1px solid #ffffff20}.brand-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:linear-gradient(145deg,#85cfc0,#398eab);color:white}.brand-icon svg{width:22px;height:22px}.brand small{display:block;color:#a0b1ad;font-size:9px;font-weight:700;letter-spacing:.12em}.brand h1{font-size:15px;margin:3px 0 0;white-space:nowrap}
-.content{display:flex;flex:1 1 auto;min-width:0;align-items:center;gap:9px 12px;flex-wrap:wrap}.eyebrow,.content h2,.description,.steps{display:none}.layer-select{flex:0 0 160px;width:160px;min-height:40px;padding:8px;border:1px solid #ffffff20;border-radius:8px;color:#f0f6f3;background:#394541;font:12px system-ui,sans-serif}.year-control{display:flex;flex:1 1 210px;align-items:center;gap:8px;min-width:180px;max-width:300px;color:#dce9e4;font-size:12px;white-space:nowrap}.year-control input{flex:1;min-width:70px;accent-color:#8bd3c0}.year-control output{min-width:44px;font-weight:700}.actions{display:flex;gap:8px;flex:none}button{min-height:40px;padding:9px 14px;border:1px solid #ffffff20;border-radius:8px;background:#394541;color:#eef5f2;font:600 12px system-ui,sans-serif;white-space:nowrap;cursor:pointer}button:hover:not(:disabled){background:#4a5d56}button:focus-visible{outline:3px solid white;outline-offset:2px}button:disabled{opacity:.42;cursor:not-allowed}#start{background:#8bd3c0;border-color:#8bd3c0;color:#122a24}#start:hover:not(:disabled){background:#a5e5d4}.google-link{flex:none;white-space:nowrap;color:#a6ddce;font-size:12px;text-decoration:none}.google-link:hover{text-decoration:underline}
-.status{order:5;flex:1 1 300px;min-width:180px;max-height:50px;overflow:auto;padding:8px 10px;border-radius:8px;background:#151d1c;color:#c1d3cc;font-size:12px;line-height:1.4;overflow-wrap:anywhere}.status:before{content:"";display:inline-block;width:7px;height:7px;margin-right:7px;border-radius:50%;background:#8bd3c0}.legend{order:6;display:flex;align-items:center;gap:7px;flex:0 1 auto;color:#a9bbb5;font-size:11px}.legend i{width:12px;height:12px;border:2px solid #ff514b;border-radius:2px}#downloads{order:7;white-space:nowrap;font-size:12px}#downloads a{color:#a6ddce;margin-left:8px}.dates{position:fixed;z-index:500;left:14px;bottom:28px;max-width:min(420px,calc(100vw - 90px));padding:9px 11px;border-radius:9px;background:#192321e8;color:#d3e2dc;font-size:11px;line-height:1.5;box-shadow:0 4px 15px #0006}.dates strong{color:white}
-.leaflet-control-zoom{border:0!important;box-shadow:0 4px 14px #0006!important;margin:0 18px 24px 0!important}.leaflet-control-zoom a{background:#26312f!important;color:white!important;border-color:#485450!important}.leaflet-control-attribution{background:#202928dd!important;color:#d0dfd9!important}.leaflet-control-attribution a{color:#a4ddcc!important}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#26312f;color:#ecf3ef}.leaflet-popup-content a{color:#9be4cf}
-@media(max-width:1050px){.panel{gap:10px}.brand{padding-right:10px}.content{gap:8px}.legend{display:none}.status{flex-basis:100%}}
-@media(max-width:700px){.panel{top:8px;left:8px;right:8px;gap:9px;flex-wrap:wrap;padding:10px}.brand{width:100%;border:0;padding:0;min-height:32px}.brand-icon{width:32px;height:32px}.brand-icon svg{width:19px;height:19px}.brand h1{font-size:14px}.brand small{font-size:8px}.content{width:100%;flex:1 1 100%}.layer-select{flex:1 1 145px;width:auto;min-width:0}.year-control{flex:1 1 190px;max-width:none}.actions{flex:1 1 100%}.actions button{flex:1;min-height:42px}.google-link{margin-left:auto}.status{min-width:0;max-height:52px}.dates{left:8px;bottom:26px;max-width:calc(100vw - 85px);font-size:10px}.leaflet-control-zoom{margin-right:10px!important}}
-@media(max-width:370px){.year-control{flex-basis:100%}.layer-select{flex-basis:60%}.panel{gap:6px}.content{gap:6px}}
-</style></head><body><div id="map"></div>
-<div class="dates" id="dates" role="status"><div><strong>建物外周：</strong><span id="building-date">候補の照合に使用・個別の更新日不明</span></div><div><strong>表示中の航空写真：</strong><span id="photo-date">Esri（撮影日は特定できません）</span></div></div><aside class="panel"><div class="brand"><div class="brand-icon"><img src="/static/new-building-icon.png" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></div><div><small>IMAGERY EXPLORER</small><h1>航空写真の比較</h1></div></div>
-<div class="content"><div class="eyebrow">CHANGE DETECTION</div><h2>街の変化を見つける</h2><p class="description">撮影日は区画の中心で見つかった撮影日のうち、範囲全体を取得できた日を使用します。</p>
-<div class="steps"><div class="step"><span>1</span>地図を移動して場所を選ぶ</div><div class="step"><span>2</span>自由に範囲を囲む</div><div class="step"><span>3</span>比較を開始する</div></div>
-<label for="imagery" class="eyebrow">航空写真</label><select id="imagery" class="layer-select" aria-label="航空写真の種類"><option value="esri">Esriの航空写真</option><option value="gsi">国土地理院の航空写真</option><option value="google">Google航空写真</option><option value="google-map">Googleマップ</option></select><label class="year-control" for="years">比較時期 <input id="years" type="range" min="1" max="40" value="15"><output id="years-value">15年前</output></label><label>AI設定 <select id="ai-level"><option value="medium">使用量を抑える</option><option value="high">高精度（使用量多め）</option></select></label><div class="actions"><button id="draw">✎　自由に囲む</button><button id="start" disabled>比較する　→</button><button id="clear" title="比較結果と選択範囲を消す">結果を消す</button></div><div class="status" id="status" role="status">地図上で範囲を選択してください。</div><div class="legend"><i></i>赤い外周は新築の可能性が高い建物です。</div><span id="downloads" hidden><a href="/vertices.csv">頂点CSV</a> <a href="/outlines.geojson">外周GeoJSON</a></span></div></aside>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-<script>
-const googleState = new URLSearchParams(location.search).get('google');
-if (googleState) document.getElementById('status').textContent = googleState === 'limit' ? 'Google航空写真は今月のアプリ上限に達したため無料の航空写真を表示しています。' : 'Google側の安全設定を確認できないため無料の航空写真を表示しています。';
-let savedView;try{savedView=JSON.parse(sessionStorage.getItem('aerial_view'));}catch(e){}
-const validView=savedView&&Number.isFinite(savedView.lat)&&Number.isFinite(savedView.lng)&&Number.isFinite(savedView.zoom);
-const map=L.map('map',{zoomControl:false}).setView(validView?[savedView.lat,savedView.lng]:[35.506600,137.816433333],validView?savedView.zoom:18);
-map.on('moveend',()=>{const c=map.getCenter();sessionStorage.setItem('aerial_view',JSON.stringify({lat:c.lat,lng:c.lng,zoom:map.getZoom()}));});
-L.control.zoom({position:'bottomright'}).addTo(map);
-const imageryLayers={
- esri:L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:22,maxNativeZoom:18,attribution:'Tiles &copy; Esri — Esri, Maxar, Earthstar Geographics and the GIS User Community | 建物：国土地理院 地理院地図Vector'}),
- gsi:L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg',{minNativeZoom:14,maxNativeZoom:18,maxZoom:22,attribution:'航空写真：<a href="https://maps.gsi.go.jp/development/ichiran.html">国土地理院</a> | 建物：国土地理院 地理院地図Vector'})
-};
-let selectedLayer=imageryLayers.esri.addTo(map);
-document.getElementById('imagery').onchange=e=>{if(e.target.value==='google'||e.target.value==='google-map'){const c=map.getCenter();sessionStorage.setItem('aerial_view',JSON.stringify({lat:c.lat,lng:c.lng,zoom:map.getZoom()}));location.href='/google?map='+ (e.target.value==='google-map'?'roadmap':'satellite');return;}map.removeLayer(selectedLayer);selectedLayer=imageryLayers[e.target.value].addTo(map);document.getElementById('photo-date').textContent=(e.target.value==='gsi'?'国土地理院':'Esri')+'（撮影日は場所により異なり特定できません）';};
-if(new URLSearchParams(location.search).get('layer')==='gsi'){document.getElementById('imagery').value='gsi';document.getElementById('imagery').dispatchEvent(new Event('change'));}
-const shapes=new L.FeatureGroup().addTo(map), pins=new L.FeatureGroup().addTo(map);
-const button=document.getElementById('start'), message=document.getElementById('status'), draw=document.getElementById('draw'), clear=document.getElementById('clear');
-const yearSlider=document.getElementById('years'), yearValue=document.getElementById('years-value');
-yearSlider.oninput=()=>yearValue.textContent=yearSlider.value+'年前';
-const aiLevel=document.getElementById('ai-level');aiLevel.value=sessionStorage.getItem('aerial_ai_effort')==='high'?'high':'medium';aiLevel.onchange=()=>sessionStorage.setItem('aerial_ai_effort',aiLevel.value);
-let polygon=null, drawing=false, active=false, path=[], shape=null, comparisonActive=false;
-clear.onclick=async()=>{try{const response=await fetch('/clear',{method:'POST'});const data=await response.json();if(!response.ok)throw Error(data.error);shapes.clearLayers();pins.clearLayers();polygon=null;drawing=false;active=false;comparisonActive=false;map.dragging.enable();element.style.touchAction='';button.disabled=true;document.getElementById('downloads').hidden=true;message.textContent=data.message;}catch(e){message.textContent=e.message;}};
-draw.onclick=()=>{drawing=true;polygon=null;button.disabled=true;shapes.clearLayers();pins.clearLayers();document.getElementById('downloads').hidden=true;map.dragging.disable();element.style.touchAction='none';message.textContent='地図上をドラッグして囲んでください。';};
-const element=map.getContainer();
-element.addEventListener('pointerdown',e=>{if(!drawing || e.button!==0)return; e.preventDefault();e.stopPropagation();active=true;path=[];element.setPointerCapture(e.pointerId);shape=L.polygon([], {color:'red'}).addTo(shapes);},true);
-element.addEventListener('pointermove',e=>{if(!active)return;const p=map.mouseEventToLatLng(e);path.push([p.lat,p.lng]);shape.setLatLngs(path);e.preventDefault();},true);
-element.addEventListener('pointerup',e=>{if(!active)return;active=false;drawing=false;map.dragging.enable();element.style.touchAction='';if(path.length>=3){polygon=path;button.disabled=false;message.textContent='範囲を指定しました。比較するを押してください。';}else{shapes.clearLayers();message.textContent='範囲を囲んでください。';}e.preventDefault();},true);
-button.onclick=async()=>{button.disabled=true; pins.clearLayers(); try {const r=await fetch('/compare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({polygon, years:Number(yearSlider.value), ai_effort:aiLevel.value})}); const data=await r.json(); if(!r.ok) throw Error(data.error); comparisonActive=true; poll();} catch(e){message.textContent=e.message;button.disabled=false;}};
-function escapeText(value){const el=document.createElement('span');el.textContent=String(value || '');return el.innerHTML;}
-async function poll(){try{
- const data=await (await fetch('/status')).json();message.textContent=data.message;
- if(data.status==='running'){draw.disabled=true;clear.disabled=true;button.disabled=true;setTimeout(poll,1500);return;}
- draw.disabled=false;clear.disabled=false;
- if(comparisonActive && data.status==='done'){shapes.clearLayers();comparisonActive=false;}
- if(data.status==='partial'){comparisonActive=false;}
- pins.clearLayers();
- const visible=data.points.filter(p=>p.decision==='new' && p.outline && p.outline.length>=3);
- if((data.status==='done'||data.status==='partial') && data.points.length)message.textContent += `（赤い外周 ${visible.length}件）`;
- document.getElementById('downloads').hidden=visible.length===0;
- visible.forEach(p=>{const layer=L.polygon(p.outline,{color:'red',weight:3,fillOpacity:0.12});layer.bindPopup(`新築候補 ${p.number}<br>外周の頂点：${p.outline.length}点<br>比較写真：${p.old_date} → ${p.new_date}<br>${escapeText(p.reason)}<br>${escapeText(p.source)}<br><a target="_blank" href="/result/${p.tile}">AIによる比較画像</a><br><a href="/vertices.csv">頂点座標をCSVで保存</a>`).addTo(pins);});
- button.disabled=!polygon;
- }catch(e){message.textContent='接続できません';button.disabled=!polygon;}}
-
-poll();
-</script></body></html>''')
+    return render_template("index.html")
 
 def start_ngrok(port):
     """同じポートが公開済みなら再利用し、なければ ngrok を起動する。"""
@@ -410,8 +498,10 @@ def start_ngrok(port):
     if url:
         print('公開URL:', url, flush=True)
         return
-    executable = shutil.which('ngrok') or str(Path(os.environ.get('LOCALAPPDATA', '')) / 'ngrok' / 'ngrok.exe')
-    if not Path(executable).is_file():
+    executable = os.environ.get('AKAIITO_NGROK') or shutil.which('ngrok')
+    if not executable and os.environ.get('LOCALAPPDATA'):
+        executable = str(Path(os.environ['LOCALAPPDATA']) / 'ngrok' / 'ngrok.exe')
+    if not executable or not Path(executable).is_file():
         print('ngrok が見つかりません。ローカル画面は利用できます。', flush=True)
         return
     try:
@@ -435,7 +525,7 @@ if __name__ == "__main__":
     restore = os.environ.get("AERIAL_RESTORE_SESSION")
     if restore:
         try:
-            folder = Path(restore)
+            folder = configured_path("AERIAL_RESTORE_SESSION", restore)
             state.update(json.loads((folder / 'state.json').read_text(encoding='utf-8')))
             result_dir = folder
         except (OSError, ValueError):

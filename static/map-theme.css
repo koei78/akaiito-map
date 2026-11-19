@@ -1,0 +1,57 @@
+:root{--ui-blue:#1a73e8;--ui-blue-hover:#1765c6;--ui-ink:#202124;--ui-muted:#5f6368;--ui-line:#dadce0;--ui-surface:#fff;--ui-soft:#f8f9fa;font-family:Arial,"Noto Sans JP",system-ui,sans-serif}
+body:has(#map){color:var(--ui-ink);font-family:Arial,"Noto Sans JP",system-ui,sans-serif}
+body:has(#map) #map{background:#e9eef1!important}
+button,select,input,textarea{font-family:inherit}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ui-blue)!important;outline-offset:2px}
+
+/* Desktop map controls */
+body:has(#map) .panel,body:has(#map) .bar{background:#fff!important;color:var(--ui-ink)!important;border:1px solid #e5e8eb!important;box-shadow:0 4px 18px #1d2c3724!important;border-radius:14px!important}
+body:has(#map) .brand{border-right:1px solid var(--ui-line)}body:has(#map) .brand h1,body:has(#map) .bar h1{color:var(--ui-ink)}body:has(#map) .brand small{color:#80868b}
+body:has(#map) .layer-select,body:has(#map) .bar select{background:var(--ui-soft)!important;color:var(--ui-ink)!important;border:1px solid var(--ui-line)!important;border-radius:8px!important}
+body:has(#map) .year-control,body:has(#map) .bar label{color:var(--ui-ink)!important}body:has(#map) input[type=range]{accent-color:var(--ui-blue)!important}
+body:has(#map) .panel button,body:has(#map) .bar button{background:#fff!important;color:#3c4043!important;border:1px solid var(--ui-line)!important;border-radius:8px!important;box-shadow:none!important}
+body:has(#map) .panel button:hover:not(:disabled),body:has(#map) .bar button:hover:not(:disabled){background:#f1f3f4!important}
+body:has(#map) .panel #start,body:has(#map) .bar #start{background:var(--ui-blue)!important;color:#fff!important;border-color:var(--ui-blue)!important}
+body:has(#map) .panel #start:hover:not(:disabled),body:has(#map) .bar #start:hover:not(:disabled){background:var(--ui-blue-hover)!important}
+body:has(#map) .status,body:has(#map) .bar .status{background:var(--ui-soft)!important;color:var(--ui-muted)!important;border-radius:8px!important}body:has(#map) .status:before{background:var(--ui-blue)!important}
+body:has(#map) .legend,body:has(#map) .bar .legend{color:var(--ui-muted)!important}body:has(#map) a{color:var(--ui-blue)}
+body:has(#map) .dates{background:#fff!important;color:var(--ui-muted)!important;border:1px solid #e9ecef!important;box-shadow:0 2px 9px #1d2c3720!important}body:has(#map) .dates strong{color:var(--ui-ink)!important}
+.leaflet-control-zoom a{background:#fff!important;color:var(--ui-ink)!important;border-color:var(--ui-line)!important}.leaflet-control-attribution{background:#ffffffed!important;color:var(--ui-muted)!important}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:#fff!important;color:var(--ui-ink)!important}
+
+/* Saved pins and account */
+#pin-tools{background:#fff!important;color:var(--ui-ink)!important;border:1px solid #e5e8eb!important;box-shadow:0 6px 24px #1d2c372c!important}
+#pin-tools .pin-head{background:#fff!important;color:var(--ui-ink)!important;border-bottom:1px solid #edf0f1!important}#pin-tools .pin-head h2{font-size:17px!important;font-weight:700!important;letter-spacing:0!important}#pin-user{color:var(--ui-muted)!important}
+#pin-search-desktop{display:block;width:100%;height:40px;margin:0 0 10px;padding:8px 11px;border:1px solid var(--ui-line);border-radius:8px;background:var(--ui-soft);color:var(--ui-ink);font-size:13px}
+#pin-add{background:var(--ui-blue)!important;color:#fff!important;box-shadow:none!important}#pin-add:hover{background:var(--ui-blue-hover)!important}
+#pin-filter,#pin-reload{background:#fff!important;color:var(--ui-ink)!important;border:1px solid var(--ui-line)!important}
+#pin-count{margin:1px 2px 4px;color:var(--ui-muted);font-size:11px}#pin-list button{color:var(--ui-ink)!important;border-color:#edf0f1!important}#pin-list button:hover{background:var(--ui-soft)!important}#pin-list button:before{background:var(--ui-blue)!important;box-shadow:0 0 0 3px #1a73e821!important}#pin-list button.shared-pin:before{background:#697883!important;box-shadow:0 0 0 3px #69788322!important}
+#pin-tools form{border-top:1px solid #edf0f1!important}#pin-tools form button{color:var(--ui-muted)!important}
+#desktop-account,#mobile-account,#account-dialog .account-avatar{background:#e8f0fe!important;color:#1967d2!important;border-color:#d2e3fc!important}
+#pin-editor,#account-dialog{background:#fff!important;color:var(--ui-ink)!important;border-color:#e5e8eb!important;border-radius:14px!important}
+#pin-editor::backdrop,#account-dialog::backdrop{background:#20212485!important;backdrop-filter:none!important}
+#pin-editor h2,#account-dialog h2{letter-spacing:0!important}#pin-editor .pin-subtitle,#account-dialog .account-subtitle{color:var(--ui-muted)!important}
+#pin-editor input:not([type=checkbox]),#pin-editor textarea,#account-dialog input{border-color:var(--ui-line)!important;color:var(--ui-ink)!important;background:#fff!important}
+#pin-editor .share-label{background:var(--ui-soft)!important}#pin-editor .share-label input{accent-color:var(--ui-blue)!important}
+#pin-editor button,#account-dialog .account-tabs button{border-radius:8px!important}#pin-editor button[type=submit],#account-dialog .account-submit,#account-dialog .account-tabs button[aria-selected=true]{background:var(--ui-blue)!important;color:#fff!important;border-color:var(--ui-blue)!important}
+#pin-editor #pin-delete{color:#d93025!important}#pin-events .pin-event,#account-history .history-item{background:var(--ui-soft)!important;border-color:#e8eaed!important;color:var(--ui-ink)!important}
+#account-dialog .account-tabs button:not([aria-selected=true]){background:var(--ui-soft)!important;color:var(--ui-muted)!important}#account-dialog .account-logout{color:#d93025!important;border-color:#f1c6c2!important}
+
+/* Mobile map */
+@media(max-width:700px){
+  body.google-view #map{height:calc(100dvh - var(--mobile-sheet-height,0px))!important;bottom:auto!important}
+  body:has(#map) #mobile-search{background:#fff!important;color:var(--ui-ink)!important;border:1px solid #e5e8eb!important;box-shadow:0 2px 9px #1d2c372a!important}
+  #mobile-search svg{color:var(--ui-muted)!important}#mobile-search input{color:var(--ui-ink)!important}#mobile-search input::placeholder{color:#80868b!important}
+  #mobile-rail>button{background:#fff!important;color:#3c4043!important;box-shadow:0 2px 8px #1d2c3730!important;border:1px solid #e5e8eb!important}
+  #mobile-rail>button:active{background:#e8f0fe!important;color:var(--ui-blue)!important}#mobile-layer-menu{background:#fff!important;color:var(--ui-ink)!important}
+  #mobile-sheet{background:#fff!important;color:var(--ui-ink)!important;box-shadow:0 -3px 16px #1d2c372e!important}#sheet-handle span{background:#bdc1c6!important}.sheet-heading{border-color:#eceff1!important}.sheet-heading strong{font-size:15px!important;color:var(--ui-ink)!important}.sheet-heading small{color:var(--ui-muted)!important}.sheet-heading button{color:var(--ui-muted)!important}
+  #mobile-sheet .panel,#mobile-sheet .bar,#mobile-sheet #pin-tools{background:#fff!important;color:var(--ui-ink)!important;box-shadow:none!important;border:0!important}
+  #mobile-sheet .year-control,#mobile-sheet .bar label:has(#years){color:var(--ui-ink)!important}#mobile-sheet .year-control output{color:var(--ui-blue)!important}
+  #mobile-sheet .status{color:var(--ui-muted)!important;background:transparent!important}#mobile-sheet #start,#mobile-sheet #pin-add{background:var(--ui-blue)!important;color:#fff!important;border-color:var(--ui-blue)!important}
+  #mobile-sheet .layer-select,#mobile-sheet .bar select{background:var(--ui-soft)!important;color:var(--ui-ink)!important;border-color:var(--ui-line)!important}
+  #mobile-sheet-reopen.is-visible{color:var(--ui-blue)!important;border:1px solid #e5e8eb!important;background:#fff!important;box-shadow:0 2px 9px #1d2c372a!important}
+  #pin-search-desktop{display:none}
+}
+
+/* Sign in and installation */
+body:has(main){background:#f7f8fa!important;color:var(--ui-ink)!important}body:has(main) main{border-color:#e6e9ed!important;border-radius:14px!important;box-shadow:0 6px 25px #1d2c3715!important}body:has(main) h1{color:var(--ui-ink)!important;font-weight:700!important}body:has(main) input{border-color:var(--ui-line)!important;color:var(--ui-ink)!important}body:has(main) button{background:var(--ui-blue)!important;color:#fff!important}body:has(main) button:hover{background:var(--ui-blue-hover)!important}body:has(main) a{color:var(--ui-blue)!important}
+#install-gate{background:#f7f8fa!important;color:var(--ui-ink)!important}#install-gate .gate-card{border-color:#e6e9ed!important;border-radius:16px!important;box-shadow:0 8px 30px #1d2c371a!important}#install-gate .gate-steps{background:#f1f3f4!important;color:#3c4043!important}#install-gate button{background:var(--ui-blue)!important}

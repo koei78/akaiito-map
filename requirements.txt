@@ -1,0 +1,6 @@
+Flask>=3,<4
+shapely>=2,<3
+numpy>=2,<3
+opencv-python>=4,<5
+mapbox-vector-tile>=2,<3
+tzdata>=2024.1

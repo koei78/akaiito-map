@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 
 import mapbox_vector_tile
+from paths import data_dir
 from shapely.geometry import Point, Polygon, shape
 from shapely.ops import transform
 
@@ -44,7 +45,7 @@ for p in points:
     except (TypeError, ValueError):
         continue
 
-cache = Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'AerialComparison' / 'gsi_tiles'
+cache = data_dir() / 'gsi_tiles'
 cache.mkdir(parents=True, exist_ok=True)
 
 def get_tile(tile_id):

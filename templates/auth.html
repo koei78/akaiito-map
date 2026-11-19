@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>新築マップ</title>
+  <link rel="icon" type="image/png" href="/static/app-logo.png">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/app-icon-192.png?v=2">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="/static/install-gate.css">
+  <link rel="stylesheet" href="/static/auth.css">
+  <script src="/static/install-gate.js" defer></script>
+</head>
+<body>
+  <main class="screen">
+    <img class="art" src="/static/login-illustration.png" alt="地図の上に建物の位置が示されたイラスト">
+    <div class="buttons">
+      <button class="entry-button primary" type="button" data-mode="register" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2m7-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm10-2v6m-3-3h6"/></svg><span>新規アカウント作成</span></button>
+      <button class="entry-button secondary" type="button" data-mode="login" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5m5 5H3m9-9h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7"/></svg><span>ログイン</span></button>
+    </div>
+  </main>
+  <div class="modal" id="auth-modal" role="dialog" aria-modal="true" aria-labelledby="form-title" {% if not error %}hidden{% endif %}>
+    <div class="panel">
+      <button class="close" type="button" aria-label="閉じる">×</button>
+      <h1 id="form-title"></h1>
+      {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+      <form id="auth-form" method="post" action="/{{ action }}">
+        <label for="username">ユーザー名</label>
+        <input id="username" name="username" required autocomplete="username" maxlength="40" minlength="3">
+        <small id="username-hint" hidden>3〜40文字の英数字・_・-</small>
+        <label for="password">パスワード</label>
+        <input id="password" type="password" name="password" required autocomplete="current-password" {% if action == 'register' %}minlength="8"{% endif %}>
+        <small id="password-hint" hidden>8文字以上</small>
+        <button class="submit" type="submit"></button>
+      </form>
+      <button class="switch" type="button"></button>
+    </div>
+  </div>
+  <script>
+    (() => {
+      const modal = document.getElementById('auth-modal');
+      const form = document.getElementById('auth-form');
+      const password = document.getElementById('password');
+      const switchButton = modal.querySelector('.switch');
+      let mode = {{ action|tojson }};
+      let opener = null;
+      function setMode(nextMode) {
+        mode = nextMode;
+        const register = mode === 'register';
+        form.action = register ? '/register' : '/login';
+        document.getElementById('form-title').textContent = register ? '新規アカウント作成' : 'ログイン';
+        form.querySelector('.submit').textContent = register ? 'アカウントを作成' : 'ログイン';
+        switchButton.textContent = register ? 'アカウントをお持ちの方はログイン' : '新しくアカウントを作成';
+        document.getElementById('username-hint').hidden = !register;
+        document.getElementById('password-hint').hidden = !register;
+        password.minLength = register ? 8 : 0;
+        password.autocomplete = register ? 'new-password' : 'current-password';
+      }
+      function open(nextMode, button) {
+        opener = button || opener;
+        setMode(nextMode);
+        modal.hidden = false;
+        document.body.classList.add('dialog-open');
+        document.getElementById('username').focus();
+      }
+      function close() {
+        modal.hidden = true;
+        document.body.classList.remove('dialog-open');
+        if (opener) opener.focus();
+      }
+      document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => open(button.dataset.mode, button)));
+      modal.querySelector('.close').addEventListener('click', close);
+      modal.addEventListener('click', event => { if (event.target === modal) close(); });
+      switchButton.addEventListener('click', () => open(mode === 'register' ? 'login' : 'register'));
+      document.addEventListener('keydown', event => { if (event.key === 'Escape' && !modal.hidden) close(); });
+      setMode(mode);
+      if (!modal.hidden) document.body.classList.add('dialog-open');
+    })();
+  </script>
+</body>
+</html>

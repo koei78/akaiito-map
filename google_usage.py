@@ -5,12 +5,13 @@ from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from paths import data_dir
 
 
 def reserve_map_load(limit=9500, db_path=None, now=None):
     # Google の利用集計に合わせて米国太平洋時間で月を区切る。
     month = (now or datetime.now(ZoneInfo("America/Los_Angeles"))).strftime("%Y-%m")
-    path = Path(db_path or (Path(os.environ.get("LOCALAPPDATA", Path.home())) / "AerialComparison" / "google_usage.sqlite3"))
+    path = Path(db_path or (data_dir() / "google_usage.sqlite3"))
     path.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(path, timeout=10)) as db, db:
         db.execute("CREATE TABLE IF NOT EXISTS usage (month TEXT PRIMARY KEY, loads INTEGER NOT NULL)")

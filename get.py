@@ -3,6 +3,7 @@ import math
 import subprocess
 from pathlib import Path
 from datetime import date
+from paths import imagery_executable, configured_path, ROOT
 
 # =====================
 # 設定
@@ -14,13 +15,11 @@ LON = 137.816433333
 ZOOMS = [20, 19, 18]
 RADIUS = 80  # 中心から80m、160m四方
 
-EXE = Path(__file__).resolve().parent / "GEHistoricalImagery" / "gdal" / "GEHistoricalImagery.exe"
+EXE = imagery_executable()
+if not EXE.is_file():
+    raise SystemExit("航空写真の取得ツールがありません。AKAIITO_IMAGERY_EXE を設定してください。")
 
-SAVE_DIR = (
-    Path(__file__).resolve().parent
-    / "google_earth_history"
-    / "images"
-)
+SAVE_DIR = configured_path("PHOTO_IMAGES_DIR", ROOT / "google_earth_history" / "images")
 
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 

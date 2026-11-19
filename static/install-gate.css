@@ -1,0 +1,12 @@
+html.requires-install body > :not(#install-gate){visibility:hidden!important}
+#install-gate{position:fixed;z-index:2147483647;inset:0;display:grid;place-items:center;padding:22px;background:#f4f7f3;color:#1e3b2d;font:14px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}
+#install-gate *{box-sizing:border-box}
+#install-gate .gate-card{width:min(100%,390px);padding:28px 24px;border:1px solid #e0e9df;border-radius:20px;background:#fff;box-shadow:0 16px 40px #1439231c;text-align:center}
+#install-gate .gate-icon{display:block;width:88px;height:88px;margin:0 auto 17px;border-radius:19px;box-shadow:0 6px 18px #175b9c31}
+#install-gate h1{margin:0 0 10px;font-size:22px;line-height:1.4;letter-spacing:-.03em}
+#install-gate p{margin:0 0 16px;color:#597162;font-size:13px}
+#install-gate .gate-steps{margin:18px 0;padding:15px;border-radius:12px;background:#eef5ee;color:#315342;text-align:left;font-size:13px}
+#install-gate .gate-steps strong{display:block;margin-bottom:5px}
+#install-gate button{width:100%;min-height:47px;margin:5px 0 0;padding:10px;border:0;border-radius:10px;background:#2e7656;color:#fff;font:700 14px system-ui;cursor:pointer}
+#install-gate button[hidden]{display:none}
+#install-gate .gate-note{display:block;margin-top:13px;color:#7f9184;font-size:11px}

@@ -1,27 +1,23 @@
 import csv
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 import cv2
 import numpy as np
+from paths import codex_executable, configured_path
 
 base = Path(__file__).resolve().parent
-images = Path(os.environ.get("PHOTO_IMAGES_DIR", base / "google_earth_history" / "images"))
-output_dir = Path(os.environ.get("PHOTO_OUTPUT_DIR", base))
+images = configured_path("PHOTO_IMAGES_DIR", base / "google_earth_history" / "images")
+output_dir = configured_path("PHOTO_OUTPUT_DIR", base)
 old = max(images.glob("15years_ago_*.tif"), key=lambda p: p.stat().st_mtime, default=None)
 new = max(images.glob("latest_*.tif"), key=lambda p: p.stat().st_mtime, default=None)
 if old is None or new is None:
     raise SystemExit(f"比較する写真がありません。先に python get.py を実行してください。保存先: {images}")
 
-codex = shutil.which("codex")
-if not codex:
-    codex_dir = Path(os.environ.get("LOCALAPPDATA", "")) / "OpenAI" / "Codex" / "bin"
-    candidates = list(codex_dir.glob("*/codex.exe"))
-    codex = str(max(candidates, key=lambda p: p.stat().st_mtime)) if candidates else None
+codex = codex_executable()
 if not codex:
     raise SystemExit("Codex CLI が見つかりません。Codex CLI をインストールしてください。")
 
