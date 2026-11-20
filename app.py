@@ -532,6 +532,10 @@ def create_shared_route():
                     or any(not isinstance(route.get(k), (int, float)) or not math.isfinite(route[k]) or route[k] < 0
                            for k in ('distance', 'duration'))):
                 raise ValueError()
+        shared = payload.get('shared', True)
+        if not isinstance(shared, bool):
+            raise ValueError()
+        payload = {k: payload[k] for k in ('origin', 'routes')}
         data = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
         if len(data.encode('utf-8')) > 2_000_000:
             raise ValueError()
@@ -539,17 +543,56 @@ def create_shared_route():
         return jsonify(error='経路の内容を確認してください。'), 400
     token = secrets.token_urlsafe(24)
     with pin_store.connect() as db:
-        db.execute('INSERT INTO shared_routes(token,owner_id,payload) VALUES (?,?,?)',
-                   (token, session['user_id'], data))
+        db.execute('INSERT INTO shared_routes(token,owner_id,payload,shared) VALUES (?,?,?,?)',
+                   (token, session['user_id'], data, int(shared)))
     return jsonify(token=token), 201
 
 
 @app.get('/api/shared-routes/<token>')
 def get_shared_route(token):
     with pin_store.connect() as db:
-        row = db.execute('SELECT payload FROM shared_routes WHERE token=?', (token,)).fetchone()
+        row = db.execute('SELECT payload,owner_id,shared FROM shared_routes WHERE token=?', (token,)).fetchone()
+        if row and row['owner_id'] != session['user_id']:
+            if not row['shared']:
+                row = None
+            else:
+                db.execute('INSERT OR IGNORE INTO route_viewers(token,user_id) VALUES (?,?)', (token, session['user_id']))
     return (jsonify(json.loads(row['payload'])) if row else
             (jsonify(error='共有経路が見つかりません。'), 404))
+
+
+@app.get('/api/route-history')
+def route_history():
+    with pin_store.connect() as db:
+        rows = db.execute('''SELECT r.token,r.owner_id,r.payload,r.shared,r.created_at,u.username
+                             FROM shared_routes r JOIN users u ON u.id=r.owner_id
+                             LEFT JOIN route_viewers v ON v.token=r.token AND v.user_id=?
+                             WHERE r.owner_id=? OR (v.user_id IS NOT NULL AND r.shared=1)
+                             ORDER BY r.created_at DESC, r.rowid DESC''',
+                          (session['user_id'], session['user_id'])).fetchall()
+    return jsonify([{'token':r['token'], 'owner':r['username'], 'own':r['owner_id']==session['user_id'],
+                     'shared':bool(r['shared']), 'created_at':r['created_at'],
+                     'counts':[len(route['visits']) for route in json.loads(r['payload'])['routes']]}
+                    for r in rows])
+
+
+@app.post('/api/route-history/<token>/share')
+def share_route(token):
+    with pin_store.connect() as db:
+        changed = db.execute('UPDATE shared_routes SET shared=1 WHERE token=? AND owner_id=?',
+                             (token, session['user_id'])).rowcount
+    return (jsonify(ok=True) if changed else (jsonify(error='経路が見つかりません。'), 404))
+
+
+@app.delete('/api/route-history/<token>')
+def delete_route_history(token):
+    with pin_store.connect() as db:
+        deleted = db.execute('DELETE FROM shared_routes WHERE token=? AND owner_id=?',
+                             (token, session['user_id'])).rowcount
+        if not deleted:
+            deleted = db.execute('DELETE FROM route_viewers WHERE token=? AND user_id=?',
+                                 (token, session['user_id'])).rowcount
+    return (jsonify(ok=True) if deleted else (jsonify(error='経路が見つかりません。'), 404))
 
 
 @app.get("/result/<int:tile>")

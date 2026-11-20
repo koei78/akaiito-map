@@ -10,7 +10,7 @@
 @media(max-width:650px){.bar{top:8px;left:8px;right:8px;gap:6px;padding:8px;max-height:40dvh;overflow:auto;border-radius:10px}.bar h1{font-size:13px;margin:0}.bar select,.bar button{min-height:38px;font-size:12px}.bar button{padding:8px 10px;flex:1 1 auto}.bar label{font-size:11px}.bar .status{order:10;max-height:36px;overflow:auto;font-size:11px}.bar .legend{display:none}#downloads{font-size:11px}#draw-surface{touch-action:none}}
 @media(max-width:380px){.bar{max-height:35dvh}.bar h1{width:100%}.bar button{min-width:calc(50% - 6px)}}
 </style><link rel="stylesheet" href="{{ url_for('static', filename='mobile-map.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='map-theme.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='detection-history.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='mobile-refresh.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='imported-markers.css') }}"></head><body><div id="map"></div><div id="draw-surface" hidden style="position:fixed;inset:0;z-index:2;touch-action:none;cursor:crosshair"><svg id="draw-svg" style="width:100%;height:100%;pointer-events:none"><polyline id="draw-line" fill="none" stroke="#ff3636" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-<div class="bar"><h1>航空写真の比較</h1><select id="imagery" aria-label="地図の種類"><option value="roadmap">Googleマップ</option><option value="satellite">Google航空写真</option><option value="esri">Esriの航空写真</option><option value="gsi">国土地理院の航空写真</option></select><label>比較時期 <input id="years" type="range" min="1" max="40" value="15"><output id="years-value">15年前</output></label><label>AI設定 <select id="ai-level"><option value="medium">通常</option><option value="high">高精度（時間・使用量増）</option></select></label><button id="draw">自由に囲む</button><button id="start" disabled>比較する</button><button id="locate">現在地を表示</button><button id="route">徒歩で巡回する</button><button id="route-two" type="button">2人で徒歩巡回</button><button id="route-share" type="button" hidden>経路を共有</button><input id="route-link" type="text" readonly hidden aria-label="共有リンク"><span class="legend">経路: OSRM / OpenStreetMap</span><span id="downloads" hidden><a href="/vertices.csv">頂点CSV</a> <a href="/outlines.geojson">外周GeoJSON</a></span><span class="status" id="status">地図をドラッグして移動できます。</span><span class="legend">赤：再確認済み ／ オレンジ：要確認</span><span class="legend" id="dateinfo">航空写真：Google（撮影日は特定できません）｜建物外周：候補照合に使用（個別の更新日不明）</span></div>
+<div class="bar"><h1>航空写真の比較</h1><select id="imagery" aria-label="地図の種類"><option value="roadmap">Googleマップ</option><option value="satellite">Google航空写真</option><option value="esri">Esriの航空写真</option><option value="gsi">国土地理院の航空写真</option></select><label>比較時期 <input id="years" type="range" min="1" max="40" value="15"><output id="years-value">15年前</output></label><label>AI設定 <select id="ai-level"><option value="medium">通常</option><option value="high">高精度（時間・使用量増）</option></select></label><button id="draw">自由に囲む</button><button id="start" disabled>比較する</button><button id="locate">現在地を表示</button><button id="route">徒歩で巡回する</button><button id="route-two" type="button">2人で徒歩巡回</button><button id="route-share" type="button" hidden>経路を共有</button><button id="route-history" type="button">経路履歴</button><button id="route-clear" type="button" hidden>経路表示を消す</button><input id="route-link" type="text" readonly hidden aria-label="共有リンク"><span class="legend">経路: OSRM / OpenStreetMap</span><span id="downloads" hidden><a href="/vertices.csv">頂点CSV</a> <a href="/outlines.geojson">外周GeoJSON</a></span><span class="status" id="status">地図をドラッグして移動できます。</span><span class="legend">赤：再確認済み ／ オレンジ：要確認</span><span class="legend" id="dateinfo">航空写真：Google（撮影日は特定できません）｜建物外周：候補照合に使用（個別の更新日不明）</span></div>
 {% if not google_key %}
 <script>document.getElementById('status').textContent='Google Maps APIキーが設定されていません。';</script>
 {% else %}
@@ -63,9 +63,10 @@ async function calculateWalkingRoute(origin, points, getTrip, progress) {
  }
  return {path,visits,distance,duration};
 }
-let twoPersonLines=[], twoPersonMarkers=[], twoPersonRoute=null, historyRoutePoints=null;
+let twoPersonLines=[], twoPersonMarkers=[], twoPersonRoute=null, historyRoutePoints=null, currentRouteToken=null, currentRouteOwner=false;
 window.addEventListener('route-history-points',event=>{historyRoutePoints=event.detail;});
 function showTwoRoutes(data, fit=false){
+ document.getElementById("route-clear").hidden=false;
  if(routeLine){routeLine.setMap(null);routeLine=null;} routeMarkers.forEach(m=>m.setMap(null));routeMarkers=[];
  twoPersonLines.forEach(line=>line.setMap(null));twoPersonMarkers.forEach(marker=>marker.setMap(null));twoPersonLines=[];twoPersonMarkers=[];
  twoPersonMarkers.push(new google.maps.Marker({map,position:data.origin,label:'出',title:'共通の出発地'}));
@@ -96,7 +97,7 @@ twoButton.onclick=()=>{
  if(points.length<2){statusEl.textContent='画面内に2件以上の新築候補が必要です。';return;}
  if(!navigator.geolocation){statusEl.textContent='この端末では現在地を取得できません。';return;}
  if(!confirm('現在地と候補の座標を徒歩経路計算のためFOSSGISのOSRMサービスに送信します。よろしいですか？'))return;
- twoButton.disabled=true;shareButton.hidden=true;routeLink.hidden=true;statusEl.textContent='現在地を取得しています。';
+ twoButton.disabled=true;shareButton.hidden=true;routeLink.hidden=true;currentRouteToken=null;currentRouteOwner=false;statusEl.textContent='現在地を取得しています。';
  navigator.geolocation.getCurrentPosition(async pos=>{
   const origin={lat:pos.coords.latitude,lng:pos.coords.longitude};
   try{
@@ -110,19 +111,48 @@ twoButton.onclick=()=>{
     },(done,total)=>statusEl.textContent=`${i+1}人目の徒歩経路を計算中：${done} / ${total}件`);
     routes.push({...result,visits:result.visits.map(v=>({position:v.position,number:Number(v.point.number)}))});
    }
-   twoPersonRoute={origin,routes};showTwoRoutes(twoPersonRoute);shareButton.hidden=false;
+   twoPersonRoute={origin,routes};showTwoRoutes(twoPersonRoute);shareButton.hidden=false;await saveRouteToHistory();
   }catch(e){statusEl.textContent=e.message;}finally{twoButton.disabled=false;}
  },()=>{twoButton.disabled=false;statusEl.textContent='現在地を取得できません。ブラウザの位置情報を許可してください。';},{enableHighAccuracy:true,timeout:15000,maximumAge:60000});
 };
+async function saveRouteToHistory(){
+ if(!twoPersonRoute)return;
+ try{const response=await fetch('/api/shared-routes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...twoPersonRoute,shared:false})});const data=await response.json();if(!response.ok)throw Error(data.error||'保存できません');currentRouteToken=data.token;currentRouteOwner=true;}
+ catch(e){statusEl.textContent='経路履歴に保存できませんでした。共有ボタンから再試行できます。';}
+}
 shareButton.onclick=async()=>{
  if(!twoPersonRoute)return;shareButton.disabled=true;
- try{const response=await fetch('/api/shared-routes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(twoPersonRoute)});const data=await response.json();if(!response.ok)throw Error(data.error||'共有できません');
-  const url=new URL('/google',location.origin);url.searchParams.set('shared_route',data.token);routeLink.value=url.href;routeLink.hidden=false;routeLink.focus();routeLink.select();statusEl.textContent='共有リンクをコピーして相手に送ってください。リンクには出発地と巡回先が含まれます。';
+ try{if(!currentRouteToken)await saveRouteToHistory();if(!currentRouteToken||!currentRouteOwner)throw Error('この経路を共有できません');
+  const response=await fetch('/api/route-history/'+encodeURIComponent(currentRouteToken)+'/share',{method:'POST'});if(!response.ok)throw Error('共有できません');
+  const url=new URL('/google',location.origin);url.searchParams.set('shared_route',currentRouteToken);routeLink.value=url.href;routeLink.hidden=false;routeLink.focus();routeLink.select();statusEl.textContent='共有リンクをコピーして相手に送ってください。リンクには出発地と巡回先が含まれます。';
  }catch(e){statusEl.textContent=e.message;}finally{shareButton.disabled=false;}
 };
+const routeDialog=document.createElement('dialog');routeDialog.id='route-history-dialog';routeDialog.innerHTML='<div class="detection-history-head"><h2>徒歩経路の履歴</h2><button type="button" aria-label="閉じる">×</button></div><div id="route-history-content"></div>';document.body.append(routeDialog);
+routeDialog.querySelector('button').onclick=()=>routeDialog.close();
+const routeHistoryContent=routeDialog.querySelector('#route-history-content');
+async function openRouteHistory(){
+ routeHistoryContent.textContent='読み込み中…';routeDialog.showModal();
+ try{const response=await fetch('/api/route-history');if(!response.ok)throw Error('履歴を読み込めません');const rows=await response.json();routeHistoryContent.textContent='';
+  if(!rows.length){routeHistoryContent.textContent='経路履歴はまだありません。';return;}
+  rows.forEach(row=>{
+   const item=document.createElement('div');item.className='route-history-item';
+   const open=document.createElement('button');open.type='button';open.className='route-history-open';
+   const when=new Date(row.created_at.replace(' ','T')+'Z');
+   open.textContent=`${Number.isNaN(when.getTime())?row.created_at:when.toLocaleString('ja-JP')} · ${row.counts.join(' / ')}件 · ${row.own?'自分':row.owner+'の共有'}`;
+   open.onclick=async()=>{try{const r=await fetch('/api/shared-routes/'+encodeURIComponent(row.token));if(!r.ok)throw Error('経路を読み込めません');twoPersonRoute=await r.json();currentRouteToken=row.token;currentRouteOwner=row.own;showTwoRoutes(twoPersonRoute,true);shareButton.hidden=!row.own;routeLink.hidden=true;routeDialog.close();}catch(e){statusEl.textContent=e.message;routeDialog.close();}};
+   const remove=document.createElement('button');remove.type='button';remove.textContent='削除';
+   remove.onclick=async()=>{if(!confirm(row.own?'この経路を削除しますか？共有リンクも使えなくなります。':'自分の履歴からこの経路を削除しますか？'))return;
+    const r=await fetch('/api/route-history/'+encodeURIComponent(row.token),{method:'DELETE'});if(r.ok){if(currentRouteToken===row.token){twoPersonLines.forEach(line=>line.setMap(null));twoPersonMarkers.forEach(marker=>marker.setMap(null));twoPersonLines=[];twoPersonMarkers=[];if(routeLine)routeLine.setMap(null);routeLine=null;routeMarkers.forEach(marker=>marker.setMap(null));routeMarkers=[];currentRouteToken=null;twoPersonRoute=null;shareButton.hidden=true;routeLink.hidden=true;}item.remove();if(!routeHistoryContent.children.length)routeHistoryContent.textContent='経路履歴はまだありません。';}else statusEl.textContent='履歴を削除できませんでした。';};
+   item.append(open,remove);routeHistoryContent.append(item);
+  });
+ }catch(e){routeHistoryContent.textContent=e.message;}
+}
+document.getElementById('route-history').onclick=openRouteHistory;
+document.getElementById('route-clear').onclick=()=>{twoPersonLines.forEach(line=>line.setMap(null));twoPersonMarkers.forEach(marker=>marker.setMap(null));twoPersonLines=[];twoPersonMarkers=[];if(routeLine)routeLine.setMap(null);routeLine=null;routeMarkers.forEach(marker=>marker.setMap(null));routeMarkers=[];document.getElementById('route-clear').hidden=true;shareButton.hidden=true;routeLink.hidden=true;};
+
 const routeButton=document.getElementById('route');
 routeButton.onclick=()=>{
- twoPersonLines.forEach(line=>line.setMap(null));twoPersonMarkers.forEach(marker=>marker.setMap(null));twoPersonLines=[];twoPersonMarkers=[];shareButton.hidden=true;routeLink.hidden=true;twoPersonRoute=null;
+ twoPersonLines.forEach(line=>line.setMap(null));twoPersonMarkers.forEach(marker=>marker.setMap(null));twoPersonLines=[];twoPersonMarkers=[];shareButton.hidden=true;routeLink.hidden=true;twoPersonRoute=null;currentRouteToken=null;currentRouteOwner=false;
  const bounds=map?.getBounds();
  const points=(historyRoutePoints || currentPoints).filter(p=>bounds&&bounds.contains({lat:p.lat,lng:p.lon}));
  if(!points.length){statusEl.textContent='現在の画面内に新築候補がありません。';return;}
@@ -139,11 +169,11 @@ routeButton.onclick=()=>{
     return response.json();
    },(done,total)=>statusEl.textContent=`徒歩経路を計算中：${done} / ${total}件`);
    if(routeLine)routeLine.setMap(null);routeMarkers.forEach(m=>m.setMap(null));routeMarkers=[];
-   routeLine=new google.maps.Polyline({map,path:result.path,strokeColor:'#1489ff',strokeWeight:5,strokeOpacity:.9});
+   document.getElementById("route-clear").hidden=false;routeLine=new google.maps.Polyline({map,path:result.path,strokeColor:'#1489ff',strokeWeight:5,strokeOpacity:.9});
    routeMarkers.push(new google.maps.Marker({map,position:origin,label:'出',title:'現在地'}));
    result.visits.forEach((visit,i)=>routeMarkers.push(new google.maps.Marker({map,position:visit.position,label:String(i+1),title:'新築候補 '+visit.point.number})));
-   twoPersonRoute={origin,routes:[{...result,visits:result.visits.map(v=>({position:v.position,number:Number(v.point.number)}))}]};shareButton.hidden=false;
-   statusEl.textContent=`画面内 ${points.length}件を巡回：約${(result.distance/1000).toFixed(1)} km、約${Math.ceil(result.duration/60)}分（徒歩・概算）。経路: OSRM / OpenStreetMap`;
+   twoPersonRoute={origin,routes:[{...result,visits:result.visits.map(v=>({position:v.position,number:Number(v.point.number)}))}]};shareButton.hidden=false;await saveRouteToHistory();
+   if(currentRouteToken)statusEl.textContent=`画面内 ${points.length}件を巡回：約${(result.distance/1000).toFixed(1)} km、約${Math.ceil(result.duration/60)}分（徒歩・概算）。経路: OSRM / OpenStreetMap`;
   }catch(e){statusEl.textContent=e.message;}finally{routeButton.disabled=false;}
  },()=>{routeButton.disabled=false;statusEl.textContent='現在地を取得できません。ブラウザの位置情報を許可してください。';},{enableHighAccuracy:true,timeout:15000,maximumAge:60000});
 };

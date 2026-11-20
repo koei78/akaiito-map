@@ -1,4 +1,10 @@
 #detection-history-trigger{white-space:nowrap}
+#route-history-dialog{width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 28px);padding:0;border:1px solid #e5e8eb;border-radius:16px;background:#fff;color:#202124;box-shadow:0 22px 70px #20212455;font:14px Arial,"Noto Sans JP",system-ui,sans-serif;overflow:auto}
+#route-history-dialog::backdrop{background:#20212485}
+#route-history-content{display:grid;gap:9px;min-height:70px;padding:16px}
+.route-history-item{display:flex;gap:8px;align-items:stretch}
+.route-history-item button{padding:10px;border:1px solid #dce2e5;border-radius:9px;background:#fff;color:#202124;white-space:normal;cursor:pointer}
+.route-history-item .route-history-open{flex:1;text-align:left}
 #detection-history-dialog{width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 28px);padding:0;border:1px solid #e5e8eb;border-radius:16px;background:#fff;color:#202124;box-shadow:0 22px 70px #20212455;font:14px Arial,"Noto Sans JP",system-ui,sans-serif;overflow:auto}
 #detection-history-dialog::backdrop{background:#20212485}
 #detection-history-dialog *{box-sizing:border-box}

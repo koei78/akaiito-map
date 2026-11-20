@@ -76,6 +76,26 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             login = visitor.post('/login', data={'username':'routebob','password':'strong-password-123'})
             self.assertEqual(login.location, '/google?shared_route=' + token)
 
+        def test_route_history_private_share_and_delete(self):
+            alice, headers = self.client('historyroutealice')
+            bob, bob_headers = self.client('historyroutebob')
+            pos = {'lat':35.5, 'lng':137.8}
+            route = {'path':[pos], 'visits':[{'position':pos, 'number':1}], 'distance':1, 'duration':1}
+            saved = alice.post('/api/shared-routes', json={'origin':pos, 'routes':[route], 'shared':False}, headers=headers)
+            token = saved.json['token']
+            self.assertEqual(len(alice.get('/api/route-history').json), 1)
+            self.assertEqual(bob.get('/api/shared-routes/' + token).status_code, 404)
+            self.assertEqual(bob.get('/api/route-history').json, [])
+            self.assertEqual(bob.post('/api/route-history/' + token + '/share', headers=bob_headers).status_code, 404)
+            self.assertEqual(alice.post('/api/route-history/' + token + '/share', headers=headers).status_code, 200)
+            self.assertEqual(bob.get('/api/shared-routes/' + token).status_code, 200)
+            self.assertEqual(len(bob.get('/api/route-history').json), 1)
+            self.assertEqual(bob.delete('/api/route-history/' + token, headers=bob_headers).status_code, 200)
+            self.assertEqual(bob.get('/api/route-history').json, [])
+            self.assertEqual(len(alice.get('/api/route-history').json), 1)
+            self.assertEqual(alice.delete('/api/route-history/' + token, headers=headers).status_code, 200)
+            self.assertEqual(bob.get('/api/shared-routes/' + token).status_code, 404)
+
         def test_shared_pin_display_setting_is_per_account_and_does_not_share_private_pins(self):
             alice, a = self.client("sharedsettingalice")
             bob, b = self.client("sharedsettingbob")

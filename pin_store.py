@@ -44,6 +44,11 @@ def init_db():
                 token TEXT PRIMARY KEY, owner_id INTEGER NOT NULL REFERENCES users(id),
                 payload TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS route_viewers (
+                token TEXT NOT NULL REFERENCES shared_routes(token) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                PRIMARY KEY (token, user_id)
+            );
             CREATE TABLE IF NOT EXISTS pin_history (
                 id INTEGER PRIMARY KEY, pin_id INTEGER NOT NULL REFERENCES pins(id),
                 actor_id INTEGER NOT NULL REFERENCES users(id), action TEXT NOT NULL,
@@ -54,6 +59,9 @@ def init_db():
         columns = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
         if "show_shared_pins" not in columns:
             db.execute("ALTER TABLE users ADD COLUMN show_shared_pins INTEGER NOT NULL DEFAULT 0")
+        route_columns = {row['name'] for row in db.execute('PRAGMA table_info(shared_routes)')}
+        if 'shared' not in route_columns:
+            db.execute('ALTER TABLE shared_routes ADD COLUMN shared INTEGER NOT NULL DEFAULT 1')
 
 
 def create_user(username, password):
