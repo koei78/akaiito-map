@@ -352,9 +352,10 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
             env.update(PHOTO_IMAGES_DIR=str(part), PHOTO_OUTPUT_DIR=str(part), PHOTO_REASONING_EFFORT=ai_effort,
                        PYTHONIOENCODING="utf-8")
             run = subprocess.run([sys.executable, str(base / "compare_precise.py")], cwd=base, env=env,
-                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800)
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
             if run.returncode:
-                raise RuntimeError("比較失敗: " + run.stderr[-500:])
+                detail = "AIの利用上限または混雑（429）。時間をおいて再試行してください" if "429" in run.stderr else run.stderr[-500:]
+                raise RuntimeError("比較失敗: " + detail)
             with (part / "coordinates.csv").open(encoding="utf-8-sig", newline="") as file:
                 points = [{"lat": float(row["緯度"]), "lon": float(row["経度"]), "tile": index,
                            "old_date": old.name[12:22], "new_date": new.name[7:17], "outline": json.loads(row["外周"]),

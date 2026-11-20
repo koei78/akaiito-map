@@ -68,16 +68,16 @@ with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
     effort = os.environ.get("PHOTO_REASONING_EFFORT", "medium")
     if effort not in ("medium", "high"):
         raise ValueError("AI設定が正しくありません")
-    def ask_model(instruction, schema_path, output_path, first_image, second_image):
+    def ask_model(instruction, schema_path, output_path, first_image, second_image, timeout=180, attempts=2):
         command = [codex, "exec", "--skip-git-repo-check", "--sandbox", "read-only",
                         "--model", "gpt-6-astra", "-c", f'model_reasoning_effort="{effort}"',
                         "--output-schema", str(schema_path), "-o", str(output_path),
                         "-i", str(first_image), "-i", str(second_image)]
-        for attempt in range(2):
+        for attempt in range(attempts):
             output_path.unlink(missing_ok=True)
             process = subprocess.Popen(command, stdin=subprocess.PIPE, encoding="utf-8", cwd=folder)
             try:
-                process.communicate(input=instruction, timeout=420)
+                process.communicate(input=instruction, timeout=timeout)
             except subprocess.TimeoutExpired:
                 # On Windows the CLI can leave child processes holding the temporary files.
                 if os.name == "nt":
@@ -86,7 +86,7 @@ with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
                 else:
                     process.kill()
                 process.communicate()
-                if attempt == 0:
+                if attempt + 1 < attempts:
                     print("AIの応答が遅いため、もう一度試します。", flush=True)
                     continue
                 raise TimeoutError("AIの応答が制限時間を超えました。時間をおいて再試行してください。")
@@ -133,11 +133,12 @@ with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
                          "判定根拠を短く具体的に書いてください。対象番号は1から" + str(len(preliminary)) + "までです。"
                          "指定のJSONだけを返し、コマンドやツールは使わないでください。")
         try:
-            answers = ask_model(review_prompt, review_schema_file, review_answer, marked_old_png, marked_new_png)["assessments"]
+            answers = ask_model(review_prompt, review_schema_file, review_answer, marked_old_png, marked_new_png,
+                                timeout=120, attempts=1)["assessments"]
             assessments = {item["id"]: item for item in answers if isinstance(item, dict)
                            and isinstance(item.get("id"), int) and item.get("decision") in ("new", "review", "reject")}
         except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
-            print(f"再確認が完了しなかったため候補を要確認にします: {error}")
+            raise RuntimeError("AIによる再確認が完了しませんでした") from error
 
 
 world_file = new.with_suffix(".tfw")
