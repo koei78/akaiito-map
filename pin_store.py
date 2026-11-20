@@ -40,6 +40,10 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS pins_owner ON pins(owner_id, deleted_at);
             CREATE INDEX IF NOT EXISTS pins_shared ON pins(shared, deleted_at);
+            CREATE TABLE IF NOT EXISTS shared_routes (
+                token TEXT PRIMARY KEY, owner_id INTEGER NOT NULL REFERENCES users(id),
+                payload TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             CREATE TABLE IF NOT EXISTS pin_history (
                 id INTEGER PRIMARY KEY, pin_id INTEGER NOT NULL REFERENCES pins(id),
                 actor_id INTEGER NOT NULL REFERENCES users(id), action TEXT NOT NULL,

@@ -63,6 +63,9 @@ def require_account():
     if not session.get("user_id"):
         if request.path.startswith("/api/"):
             return jsonify(error="ログインが必要です。"), 401
+        token = request.args.get('shared_route', '')
+        if request.path == '/google' and re.fullmatch(r'[A-Za-z0-9_-]{32}', token):
+            session['pending_shared_route'] = token
         return redirect("/login")
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         if request.headers.get("X-CSRF-Token") != session.get("csrf"):
@@ -88,9 +91,10 @@ def login():
         username = request.form.get("username", "").strip()
         user = pin_store.authenticate(username, request.form.get("password", ""))
         if user:
+            pending = session.get('pending_shared_route')
             session.clear()
             session["user_id"], session["username"], session["csrf"] = user["id"], user["username"], secrets.token_urlsafe(32)
-            return redirect("/")
+            return redirect('/google?shared_route=' + pending if pending else '/')
         error = "ユーザー名またはパスワードが違います。"
     return render_template("auth.html", action="login", error=error)
 
@@ -108,9 +112,10 @@ def register():
         else:
             try:
                 user_id = pin_store.create_user(username, password)
+                pending = session.get('pending_shared_route')
                 session.clear()
                 session["user_id"], session["username"], session["csrf"] = user_id, username, secrets.token_urlsafe(32)
-                return redirect("/")
+                return redirect('/google?shared_route=' + pending if pending else '/')
             except sqlite3.IntegrityError:
                 error = "そのユーザー名は使用されています。"
     return render_template("auth.html", action="register", error=error)
@@ -503,6 +508,48 @@ def status():
     if state.get("owner_id") != session["user_id"]:
         return jsonify(status="idle", message="地図上で範囲を選択してください。", points=[])
     return jsonify(state)
+
+
+@app.post('/api/shared-routes')
+def create_shared_route():
+    payload = request.get_json(silent=True)
+    try:
+        if not isinstance(payload, dict) or not isinstance(payload.get('routes'), list) or len(payload['routes']) != 2:
+            raise ValueError()
+        def valid_position(pos):
+            return (isinstance(pos, dict) and isinstance(pos.get('lat'), (int, float))
+                    and isinstance(pos.get('lng'), (int, float))
+                    and math.isfinite(pos['lat']) and math.isfinite(pos['lng'])
+                    and -90 <= pos['lat'] <= 90 and -180 <= pos['lng'] <= 180)
+        if not valid_position(payload.get('origin')):
+            raise ValueError()
+        for route in payload['routes']:
+            if (not isinstance(route, dict) or not isinstance(route.get('path'), list)
+                    or not 1 <= len(route['path']) <= 100000 or not all(map(valid_position, route['path']))
+                    or not isinstance(route.get('visits'), list) or not route['visits']
+                    or not all(isinstance(v, dict) and valid_position(v.get('position'))
+                               and isinstance(v.get('number'), int) for v in route['visits'])
+                    or any(not isinstance(route.get(k), (int, float)) or not math.isfinite(route[k]) or route[k] < 0
+                           for k in ('distance', 'duration'))):
+                raise ValueError()
+        data = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
+        if len(data.encode('utf-8')) > 2_000_000:
+            raise ValueError()
+    except (ValueError, TypeError):
+        return jsonify(error='経路の内容を確認してください。'), 400
+    token = secrets.token_urlsafe(24)
+    with pin_store.connect() as db:
+        db.execute('INSERT INTO shared_routes(token,owner_id,payload) VALUES (?,?,?)',
+                   (token, session['user_id'], data))
+    return jsonify(token=token), 201
+
+
+@app.get('/api/shared-routes/<token>')
+def get_shared_route(token):
+    with pin_store.connect() as db:
+        row = db.execute('SELECT payload FROM shared_routes WHERE token=?', (token,)).fetchone()
+    return (jsonify(json.loads(row['payload'])) if row else
+            (jsonify(error='共有経路が見つかりません。'), 404))
 
 
 @app.get("/result/<int:tile>")

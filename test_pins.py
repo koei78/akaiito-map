@@ -53,6 +53,25 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             self.assertEqual([row["action"] for row in recent], ["deleted", "updated", "created"])
             self.assertEqual(bob.get("/api/pins/history").json, [])
 
+        def test_shared_two_person_route_requires_link_and_login(self):
+            alice, headers = self.client('routealice')
+            bob, _ = self.client('routebob')
+            position = {'lat': 35.5, 'lng': 137.8}
+            route = {'path': [position], 'visits': [{'position': position, 'number': 1}],
+                     'distance': 100, 'duration': 90}
+            body = {'origin': position, 'routes': [route, {**route, 'visits': [{'position': position, 'number': 2}]}]}
+            self.assertEqual(alice.post('/api/shared-routes', json=body).status_code, 403)
+            self.assertEqual(alice.post('/api/shared-routes', json={'routes': []}, headers=headers).status_code, 400)
+            response = alice.post('/api/shared-routes', json=body, headers=headers)
+            self.assertEqual(response.status_code, 201)
+            token = response.json['token']
+            self.assertEqual(bob.get('/api/shared-routes/' + token).json, body)
+            visitor = app.app.test_client()
+            self.assertEqual(visitor.get('/api/shared-routes/' + token).status_code, 401)
+            visitor.get('/google?shared_route=' + token)
+            login = visitor.post('/login', data={'username':'routebob','password':'strong-password-123'})
+            self.assertEqual(login.location, '/google?shared_route=' + token)
+
         def test_shared_pin_display_setting_is_per_account_and_does_not_share_private_pins(self):
             alice, a = self.client("sharedsettingalice")
             bob, b = self.client("sharedsettingbob")

@@ -31,6 +31,7 @@
     }
     layers = [];
     active.hidden = true;
+    window.dispatchEvent(new CustomEvent('route-history-points', {detail:null}));
   }
   active.querySelector('button').onclick = clearOverlay;
   document.getElementById('start')?.addEventListener('click', clearOverlay);
@@ -108,6 +109,7 @@
       return;
     }
     clearOverlay();
+    window.dispatchEvent(new CustomEvent('route-history-points', {detail:run.points.filter(p => p.decision === 'new')}));
     const coords = [];
     for (const point of run.points) {
       const outline = point.outline;

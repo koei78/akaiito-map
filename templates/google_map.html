@@ -10,7 +10,7 @@
 @media(max-width:650px){.bar{top:8px;left:8px;right:8px;gap:6px;padding:8px;max-height:40dvh;overflow:auto;border-radius:10px}.bar h1{font-size:13px;margin:0}.bar select,.bar button{min-height:38px;font-size:12px}.bar button{padding:8px 10px;flex:1 1 auto}.bar label{font-size:11px}.bar .status{order:10;max-height:36px;overflow:auto;font-size:11px}.bar .legend{display:none}#downloads{font-size:11px}#draw-surface{touch-action:none}}
 @media(max-width:380px){.bar{max-height:35dvh}.bar h1{width:100%}.bar button{min-width:calc(50% - 6px)}}
 </style><link rel="stylesheet" href="{{ url_for('static', filename='mobile-map.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='map-theme.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='detection-history.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='mobile-refresh.css') }}"><link rel="stylesheet" href="{{ url_for('static', filename='imported-markers.css') }}"></head><body><div id="map"></div><div id="draw-surface" hidden style="position:fixed;inset:0;z-index:2;touch-action:none;cursor:crosshair"><svg id="draw-svg" style="width:100%;height:100%;pointer-events:none"><polyline id="draw-line" fill="none" stroke="#ff3636" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-<div class="bar"><h1>航空写真の比較</h1><select id="imagery" aria-label="地図の種類"><option value="roadmap">Googleマップ</option><option value="satellite">Google航空写真</option><option value="esri">Esriの航空写真</option><option value="gsi">国土地理院の航空写真</option></select><label>比較時期 <input id="years" type="range" min="1" max="40" value="15"><output id="years-value">15年前</output></label><label>AI設定 <select id="ai-level"><option value="medium">通常</option><option value="high">高精度（時間・使用量増）</option></select></label><button id="draw">自由に囲む</button><button id="start" disabled>比較する</button><button id="locate">現在地を表示</button><button id="route">徒歩で巡回する</button><span class="legend">経路: OSRM / OpenStreetMap</span><span id="downloads" hidden><a href="/vertices.csv">頂点CSV</a> <a href="/outlines.geojson">外周GeoJSON</a></span><span class="status" id="status">地図をドラッグして移動できます。</span><span class="legend">赤：再確認済み ／ オレンジ：要確認</span><span class="legend" id="dateinfo">航空写真：Google（撮影日は特定できません）｜建物外周：候補照合に使用（個別の更新日不明）</span></div>
+<div class="bar"><h1>航空写真の比較</h1><select id="imagery" aria-label="地図の種類"><option value="roadmap">Googleマップ</option><option value="satellite">Google航空写真</option><option value="esri">Esriの航空写真</option><option value="gsi">国土地理院の航空写真</option></select><label>比較時期 <input id="years" type="range" min="1" max="40" value="15"><output id="years-value">15年前</output></label><label>AI設定 <select id="ai-level"><option value="medium">通常</option><option value="high">高精度（時間・使用量増）</option></select></label><button id="draw">自由に囲む</button><button id="start" disabled>比較する</button><button id="locate">現在地を表示</button><button id="route">徒歩で巡回する</button><button id="route-two" type="button">2人で徒歩巡回</button><button id="route-share" type="button" hidden>2人の経路を共有</button><input id="route-link" type="text" readonly hidden aria-label="共有リンク"><span class="legend">経路: OSRM / OpenStreetMap</span><span id="downloads" hidden><a href="/vertices.csv">頂点CSV</a> <a href="/outlines.geojson">外周GeoJSON</a></span><span class="status" id="status">地図をドラッグして移動できます。</span><span class="legend">赤：再確認済み ／ オレンジ：要確認</span><span class="legend" id="dateinfo">航空写真：Google（撮影日は特定できません）｜建物外周：候補照合に使用（個別の更新日不明）</span></div>
 {% if not google_key %}
 <script>document.getElementById('status').textContent='Google Maps APIキーが設定されていません。';</script>
 {% else %}
@@ -27,6 +27,7 @@ function initMap(){
  projection=new google.maps.OverlayView();projection.onAdd=()=>{};projection.draw=()=>{};projection.onRemove=()=>{};projection.setMap(map);
  const layer=document.getElementById('imagery');const updateType=()=>{layer.value=map.getMapTypeId();document.getElementById('dateinfo').textContent=(layer.value==='roadmap'?'地図：Google':'航空写真：Google（撮影日は特定できません）')+'｜建物外周：候補照合に使用（個別の更新日不明）';};updateType();layer.onchange=()=>{if(layer.value==='roadmap'||layer.value==='satellite'){map.setMapTypeId(layer.value);updateType();}else location.href='/?layer='+layer.value;};
  poll();
+ loadSharedRoute();
  
 }
 window.initMap=initMap;
@@ -62,8 +63,66 @@ async function calculateWalkingRoute(origin, points, getTrip, progress) {
  }
  return {path,visits,distance,duration};
 }
+let twoPersonLines=[], twoPersonMarkers=[], twoPersonRoute=null, historyRoutePoints=null;
+window.addEventListener('route-history-points',event=>{historyRoutePoints=event.detail;});
+function showTwoRoutes(data, fit=false){
+ if(routeLine){routeLine.setMap(null);routeLine=null;} routeMarkers.forEach(m=>m.setMap(null));routeMarkers=[];
+ twoPersonLines.forEach(line=>line.setMap(null));twoPersonMarkers.forEach(marker=>marker.setMap(null));twoPersonLines=[];twoPersonMarkers=[];
+ twoPersonMarkers.push(new google.maps.Marker({map,position:data.origin,label:'出',title:'共通の出発地'}));
+ const colors=['#1a73e8','#e8710a'], bounds=new google.maps.LatLngBounds();
+ data.routes.forEach((route,group)=>{
+  twoPersonLines.push(new google.maps.Polyline({map,path:route.path,strokeColor:colors[group],strokeWeight:5,strokeOpacity:.9}));
+  route.path.forEach(point=>bounds.extend(point));
+  route.visits.forEach((visit,index)=>twoPersonMarkers.push(new google.maps.Marker({map,position:visit.position,label:{text:String(index+1),color:'white'},title:`${group+1}人目・新築候補 ${visit.number}`,icon:{path:google.maps.SymbolPath.CIRCLE,scale:12,fillColor:colors[group],fillOpacity:1,strokeColor:'white',strokeWeight:2}})));
+ });
+ if(fit&&!bounds.isEmpty())map.fitBounds(bounds);
+ statusEl.textContent=data.routes.map((r,i)=>`${i+1}人目 ${r.visits.length}件・約${(r.distance/1000).toFixed(1)}km・約${Math.ceil(r.duration/60)}分`).join(' / ')+'（徒歩・概算）';
+}
+async function loadSharedRoute(){
+ const token=new URLSearchParams(location.search).get('shared_route');if(!token)return;
+ try{const response=await fetch('/api/shared-routes/'+encodeURIComponent(token));if(!response.ok)throw Error('共有経路を読み込めません');showTwoRoutes(await response.json(),true);}
+ catch(e){statusEl.textContent=e.message;}
+}
+const twoButton=document.getElementById('route-two'), shareButton=document.getElementById('route-share'), routeLink=document.getElementById('route-link');
+function splitRoutePoints(points, latitude){
+ const latRange=Math.max(...points.map(p=>p.lat))-Math.min(...points.map(p=>p.lat));
+ const lonRange=(Math.max(...points.map(p=>p.lon))-Math.min(...points.map(p=>p.lon)))*Math.cos(latitude*Math.PI/180);
+ const sorted=points.slice().sort((a,b)=>latRange>=lonRange?a.lat-b.lat:a.lon-b.lon), mid=Math.ceil(points.length/2);
+ return [sorted.slice(0,mid),sorted.slice(mid)];
+}
+twoButton.onclick=()=>{
+ const bounds=map?.getBounds(), seen=new Set();
+ const points=(historyRoutePoints || currentPoints).filter(p=>{if(!bounds||!bounds.contains({lat:p.lat,lng:p.lon}))return false;const key=p.lat.toFixed(6)+','+p.lon.toFixed(6);if(seen.has(key))return false;seen.add(key);return true;});
+ if(points.length<2){statusEl.textContent='画面内に2件以上の新築候補が必要です。';return;}
+ if(!navigator.geolocation){statusEl.textContent='この端末では現在地を取得できません。';return;}
+ if(!confirm('現在地と候補の座標を徒歩経路計算のためFOSSGISのOSRMサービスに送信します。よろしいですか？'))return;
+ twoButton.disabled=true;shareButton.hidden=true;routeLink.hidden=true;statusEl.textContent='現在地を取得しています。';
+ navigator.geolocation.getCurrentPosition(async pos=>{
+  const origin={lat:pos.coords.latitude,lng:pos.coords.longitude};
+  try{
+   // Spatially adjacent buildings stay together; each group receives half the buildings.
+   const groups=splitRoutePoints(points,origin.lat), routes=[];
+   for(let i=0;i<2;i++){
+    const result=await calculateWalkingRoute(origin,groups[i],async coords=>{
+     const encoded=coords.map(p=>p.lng.toFixed(6)+','+p.lat.toFixed(6)).join(';');
+     const response=await fetch('https://routing.openstreetmap.de/routed-foot/trip/v1/driving/'+encoded+'?source=first&destination=last&roundtrip=false&overview=full&geometries=geojson',{referrerPolicy:'no-referrer'});
+     if(!response.ok)throw Error('経路サービスが利用できません（'+response.status+'）');return response.json();
+    },(done,total)=>statusEl.textContent=`${i+1}人目の徒歩経路を計算中：${done} / ${total}件`);
+    routes.push({...result,visits:result.visits.map(v=>({position:v.position,number:Number(v.point.number)}))});
+   }
+   twoPersonRoute={origin,routes};showTwoRoutes(twoPersonRoute);shareButton.hidden=false;
+  }catch(e){statusEl.textContent=e.message;}finally{twoButton.disabled=false;}
+ },()=>{twoButton.disabled=false;statusEl.textContent='現在地を取得できません。ブラウザの位置情報を許可してください。';},{enableHighAccuracy:true,timeout:15000,maximumAge:60000});
+};
+shareButton.onclick=async()=>{
+ if(!twoPersonRoute)return;shareButton.disabled=true;
+ try{const response=await fetch('/api/shared-routes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(twoPersonRoute)});const data=await response.json();if(!response.ok)throw Error(data.error||'共有できません');
+  const url=new URL('/google',location.origin);url.searchParams.set('shared_route',data.token);routeLink.value=url.href;routeLink.hidden=false;routeLink.focus();routeLink.select();statusEl.textContent='共有リンクをコピーして相手に送ってください。リンクには出発地と巡回先が含まれます。';
+ }catch(e){statusEl.textContent=e.message;}finally{shareButton.disabled=false;}
+};
 const routeButton=document.getElementById('route');
 routeButton.onclick=()=>{
+ twoPersonLines.forEach(line=>line.setMap(null));twoPersonMarkers.forEach(marker=>marker.setMap(null));twoPersonLines=[];twoPersonMarkers=[];shareButton.hidden=true;routeLink.hidden=true;twoPersonRoute=null;
  const bounds=map?.getBounds();
  const points=currentPoints.filter(p=>bounds&&bounds.contains({lat:p.lat,lng:p.lon}));
  if(!points.length){statusEl.textContent='現在の画面内に新築候補がありません。';return;}

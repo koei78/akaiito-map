@@ -1,5 +1,6 @@
 #mobile-search,#mobile-account,#mobile-rail,#mobile-sheet,#mobile-sheet-reopen{display:none}
 #mobile-sheet{display:contents}
+#mobile-sheet [hidden]{display:none!important}
 #mobile-sheet>.sheet-heading,#mobile-sheet>#sheet-handle{display:none}
 @media(max-width:700px){
   html,body{height:100%;overflow:hidden}
@@ -27,6 +28,7 @@
   #mobile-sheet .layer-select,#mobile-sheet .bar select,#mobile-sheet label:has(#ai-level),#mobile-sheet #downloads,#mobile-sheet .google-link{display:none!important}
   #mobile-sheet.is-expanded .layer-select,#mobile-sheet.is-expanded .bar select,#mobile-sheet.is-expanded label:has(#ai-level),#mobile-sheet.is-expanded #downloads,#mobile-sheet.is-expanded .google-link{display:flex!important;order:5;min-height:37px;color:#31543c!important}
   #mobile-sheet.is-expanded .actions button,#mobile-sheet.is-expanded .bar button{display:block!important;min-height:37px!important;border-radius:8px!important;background:#ecf3eb!important;color:#31543c!important;border:1px solid #d5e4d5!important}
+  #mobile-sheet.is-expanded .bar button[hidden]{display:none!important}
   #mobile-sheet.is-expanded #start{background:#2e7656!important;color:#fff!important}
   #mobile-sheet #pin-tools{display:block!important;background:#fff!important;color:#284536!important;overflow:visible!important}#mobile-sheet #pin-tools .pin-head{display:none!important}#mobile-sheet #pin-tools .pin-body{padding:8px 15px}#mobile-sheet #pin-tools .pin-controls{display:flex!important}#mobile-sheet #pin-tools #pin-list{display:block!important;max-height:165px}#mobile-sheet #pin-tools form{display:block!important;padding:6px 15px 10px}
   #mobile-sheet #pin-add{background:#2e7656;box-shadow:none}
