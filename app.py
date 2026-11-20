@@ -349,9 +349,10 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
                 if old is None:
                     raise NoImagery("現在画像より古い画像が範囲全体に揃いません")
             env = os.environ.copy()
-            env.update(PHOTO_IMAGES_DIR=str(part), PHOTO_OUTPUT_DIR=str(part), PHOTO_REASONING_EFFORT=ai_effort)
+            env.update(PHOTO_IMAGES_DIR=str(part), PHOTO_OUTPUT_DIR=str(part), PHOTO_REASONING_EFFORT=ai_effort,
+                       PYTHONIOENCODING="utf-8")
             run = subprocess.run([sys.executable, str(base / "compare_precise.py")], cwd=base, env=env,
-                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=540)
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=1800)
             if run.returncode:
                 raise RuntimeError("比較失敗: " + run.stderr[-500:])
             with (part / "coordinates.csv").open(encoding="utf-8-sig", newline="") as file:
@@ -376,7 +377,7 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
         next_id = len(cells)
         completed = 0
         # 再確認を含む AI 判定の同時実行数を抑えて処理を安定させる。
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             futures = {pool.submit(process, (index, bounds)): (index, bounds, 0)
                        for index, bounds in enumerate(cells)}
             while futures:
@@ -409,8 +410,9 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
         save_history(final_status, points, final_message)
         state.update(status=final_status, points=points, message=final_message)
     except Exception as error:
-        save_history("error", [], str(error))
-        state.update(status="error", message=str(error), points=[])
+        saved_points = state.get("points", []).copy()
+        save_history("partial" if saved_points else "error", saved_points, str(error))
+        state.update(status="partial" if saved_points else "error", message=str(error), points=saved_points)
 
 
 @app.post("/compare")

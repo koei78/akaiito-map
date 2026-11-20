@@ -43,7 +43,7 @@ old_coverage = cv2.warpAffine(np.full(old_image.shape[:2], 255, np.uint8), warp[
 old_image = cv2.warpAffine(old_image, warp[:2], (new_image.shape[1], new_image.shape[0]))
 old_image, old_coverage, residual_shift = refine_translation(old_image, new_image, old_coverage)
 print(f"位置合わせの補正: x={residual_shift[0]:.1f}px, y={residual_shift[1]:.1f}px")
-with tempfile.TemporaryDirectory() as folder:
+with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
     folder = Path(folder)
     old_png, new_png = folder / "old.png", folder / "new.png"
     cv2.imencode(".png", old_image)[1].tofile(old_png)
@@ -69,11 +69,30 @@ with tempfile.TemporaryDirectory() as folder:
     if effort not in ("medium", "high"):
         raise ValueError("AI設定が正しくありません")
     def ask_model(instruction, schema_path, output_path, first_image, second_image):
-        subprocess.run([codex, "exec", "--skip-git-repo-check", "--sandbox", "read-only",
+        command = [codex, "exec", "--skip-git-repo-check", "--sandbox", "read-only",
                         "--model", "gpt-6-astra", "-c", f'model_reasoning_effort="{effort}"',
                         "--output-schema", str(schema_path), "-o", str(output_path),
-                        "-i", str(first_image), "-i", str(second_image)],
-                       input=instruction, encoding="utf-8", check=True, cwd=folder, timeout=180)
+                        "-i", str(first_image), "-i", str(second_image)]
+        for attempt in range(2):
+            output_path.unlink(missing_ok=True)
+            process = subprocess.Popen(command, stdin=subprocess.PIPE, encoding="utf-8", cwd=folder)
+            try:
+                process.communicate(input=instruction, timeout=420)
+            except subprocess.TimeoutExpired:
+                # On Windows the CLI can leave child processes holding the temporary files.
+                if os.name == "nt":
+                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                else:
+                    process.kill()
+                process.communicate()
+                if attempt == 0:
+                    print("AIの応答が遅いため、もう一度試します。", flush=True)
+                    continue
+                raise TimeoutError("AIの応答が制限時間を超えました。時間をおいて再試行してください。")
+            if process.returncode:
+                raise subprocess.CalledProcessError(process.returncode, command)
+            break
         return json.loads(output_path.read_text(encoding="utf-8"))
 
     buildings = [] if nearly_identical(old_image, new_image, old_coverage) else ask_model(
