@@ -66,6 +66,10 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             self.assertEqual(response.status_code, 201)
             token = response.json['token']
             self.assertEqual(bob.get('/api/shared-routes/' + token).json, body)
+            single = {'origin':position, 'routes':[route]}
+            single_response = alice.post('/api/shared-routes', json=single, headers=headers)
+            self.assertEqual(single_response.status_code, 201)
+            self.assertEqual(bob.get('/api/shared-routes/' + single_response.json['token']).json, single)
             visitor = app.app.test_client()
             self.assertEqual(visitor.get('/api/shared-routes/' + token).status_code, 401)
             visitor.get('/google?shared_route=' + token)

@@ -514,7 +514,7 @@ def status():
 def create_shared_route():
     payload = request.get_json(silent=True)
     try:
-        if not isinstance(payload, dict) or not isinstance(payload.get('routes'), list) or len(payload['routes']) != 2:
+        if not isinstance(payload, dict) or not isinstance(payload.get('routes'), list) or len(payload['routes']) not in (1, 2):
             raise ValueError()
         def valid_position(pos):
             return (isinstance(pos, dict) and isinstance(pos.get('lat'), (int, float))
