@@ -7,7 +7,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from image_quality import final_decision, inspect_candidate, nearly_identical, refine_translation
+from image_quality import final_decision, inspect_candidate, nearly_identical, refine_translation, regularize_roof
 from paths import codex_executable, configured_path
 
 base = Path(__file__).resolve().parent
@@ -154,6 +154,11 @@ for candidate_id, (pixels, quality, quality_reason) in enumerate(preliminary, 1)
     x, y = moments["m10"] / moments["m00"], moments["m01"] / moments["m00"]
     longitude, latitude = a * x + b * y + c, d * x + e * y + f
     outline = [[d * px + e * py + f, a * px + b * py + c] for px, py in pixels]
+    outline = regularize_roof(outline)
+    # Use the same corrected outline in the saved image and geographic output.
+    inverse = np.linalg.inv(geo_matrix(new))
+    pixels = np.array([np.rint((inverse @ np.array([lon, lat, 1]))[:2]).astype(np.int32)
+                       for lat, lon in outline])
     coordinates.append((len(coordinates) + 1, latitude, longitude, outline, decision, reason))
     color = (0, 0, 255) if decision == "new" else (0, 165, 255)
     cv2.polylines(new_image, [pixels], True, color, 3)

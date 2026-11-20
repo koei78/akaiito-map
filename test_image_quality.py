@@ -4,7 +4,7 @@ from unittest.mock import patch
 import cv2
 import numpy as np
 
-from image_quality import final_decision, inspect_candidate, nearly_identical, refine_translation
+from image_quality import final_decision, inspect_candidate, nearly_identical, refine_translation, regularize_roof
 from outline_matching import footprint_agreement
 from shapely.geometry import box
 
@@ -22,6 +22,28 @@ class ImageQualityTests(unittest.TestCase):
         self.assertAlmostEqual(dx, -5, delta=1)
         self.assertAlmostEqual(dy, 4, delta=1)
         self.assertLess(np.mean(cv2.absdiff(aligned, current)), np.mean(cv2.absdiff(old, current)))
+
+    def test_near_rectangular_roof_keeps_orientation_and_has_right_angles(self):
+        import math
+        angle = math.radians(30)
+        scale_x = 111320 * math.cos(math.radians(35))
+        local = [(0, 0), (10, 0.3), (10.2, 6), (0, 6)]
+        rotated = [(x * math.cos(angle) - y * math.sin(angle),
+                    x * math.sin(angle) + y * math.cos(angle)) for x, y in local]
+        roof = [[35 + y / 111320, 137 + x / scale_x] for x, y in rotated]
+        fitted = regularize_roof(roof)
+        meters = np.array([[(lon - 137) * scale_x, (lat - 35) * 111320] for lat, lon in fitted])
+        edges = np.roll(meters, -1, axis=0) - meters
+        self.assertEqual(len(fitted), 4)
+        for i in range(4):
+            self.assertAlmostEqual(float(np.dot(edges[i], edges[(i + 1) % 4])), 0, delta=0.001)
+        self.assertGreater(abs(edges[0][0]), 1)
+        self.assertGreater(abs(edges[0][1]), 1)
+
+    def test_irregular_roof_is_not_forced_into_rectangle(self):
+        roof = [[35, 137], [35, 137.0001], [35.00005, 137.0001],
+                [35.00005, 137.00005], [35.0001, 137.00005], [35.0001, 137]]
+        self.assertEqual(regularize_roof(roof), roof)
 
     def test_identical_imagery_is_not_a_change(self):
         image = np.full((256, 256, 3), 120, np.uint8)

@@ -2,7 +2,33 @@
 
 import cv2
 import numpy as np
+import math
 from shapely.geometry import Polygon
+
+
+def regularize_roof(outline):
+    """Fit a rotated rectangle only when it closely matches the original roof."""
+    if len(outline) < 4:
+        return outline
+    lat0, lon0 = map(float, outline[0])
+    xscale = 111320 * math.cos(math.radians(lat0))
+    if xscale < 1:
+        return outline
+    try:
+        local = np.array([[(lon - lon0) * xscale, (lat - lat0) * 111320]
+                          for lat, lon in outline], dtype=np.float32)
+        original = Polygon(local)
+        if not original.is_valid or original.area <= 0:
+            return outline
+        rect = cv2.boxPoints(cv2.minAreaRect(local))
+        fitted = Polygon(rect)
+        if (not fitted.is_valid or fitted.area <= 0
+                or original.intersection(fitted).area / original.union(fitted).area < 0.88
+                or original.hausdorff_distance(fitted) > 1.5):
+            return outline
+        return [[lat0 + float(y) / 111320, lon0 + float(x) / xscale] for x, y in rect]
+    except (TypeError, ValueError, cv2.error):
+        return outline
 
 
 def _gray(image):
