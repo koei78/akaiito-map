@@ -515,6 +515,50 @@ def result(tile):
     return send_file(image, mimetype="image/png")
 
 
+def result_photo(tile):
+    if state.get("owner_id") != session["user_id"] or result_dir is None:
+        return None
+    folder = result_dir / str(tile)
+    photos = list(folder.glob("latest_*.tif"))
+    return max(photos, key=lambda path: path.stat().st_mtime) if photos else None
+
+
+@app.get("/result/<int:tile>/bounds")
+def result_bounds(tile):
+    photo = result_photo(tile)
+    if photo is None:
+        return jsonify(error="比較写真が見つかりません。"), 404
+    try:
+        import cv2
+        import numpy as np
+        image = cv2.imdecode(np.fromfile(photo, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+        height, width = image.shape[:2]
+        a, d, b, e, c, f = map(float, photo.with_suffix('.tfw').read_text().split())
+        if b != 0 or d != 0 or a <= 0 or e >= 0:
+            raise ValueError('unsupported transform')
+        return jsonify(south=f + e * (height - 0.5), west=c - a * 0.5,
+                       north=f - e * 0.5, east=c + a * (width - 0.5))
+    except (OSError, ValueError, AttributeError):
+        return jsonify(error="比較写真の座標を読み取れません。"), 422
+
+
+@app.get("/result/<int:tile>/photo")
+def result_photo_image(tile):
+    photo = result_photo(tile)
+    if photo is None:
+        return "比較写真が見つかりません", 404
+    try:
+        import cv2
+        import numpy as np
+        image = cv2.imdecode(np.fromfile(photo, dtype=np.uint8), cv2.IMREAD_COLOR)
+        ok, encoded = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        if not ok:
+            raise ValueError('encode failed')
+        return Response(encoded.tobytes(), mimetype='image/jpeg')
+    except (OSError, ValueError, cv2.error):
+        return "比較写真を読み取れません", 422
+
+
 def output_outlines():
     """地図に表示している頂点を返す。中心座標は出力に使わない。"""
     records = []

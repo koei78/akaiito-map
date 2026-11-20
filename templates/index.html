@@ -64,6 +64,15 @@ element.addEventListener('pointermove',e=>{if(!active)return;const p=map.mouseEv
 element.addEventListener('pointerup',e=>{if(!active)return;active=false;drawing=false;map.dragging.enable();element.style.touchAction='';if(path.length>=3){polygon=path;button.disabled=false;message.textContent='範囲を指定しました。比較するを押してください。';}else{shapes.clearLayers();message.textContent='範囲を囲んでください。';}e.preventDefault();},true);
 button.onclick=async()=>{button.disabled=true; pins.clearLayers(); try {const r=await fetch('/compare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({polygon, years:Number(yearSlider.value), ai_effort:aiLevel.value})}); const data=await r.json(); if(!r.ok) throw Error(data.error); comparisonActive=true; poll();} catch(e){message.textContent=e.message;button.disabled=false;}};
 function escapeText(value){const el=document.createElement('span');el.textContent=String(value || '');return el.innerHTML;}
+let comparisonPhoto = null, comparisonPhotoTile = null;
+async function showComparisonPhoto(tile){
+ if(comparisonPhoto && comparisonPhotoTile===tile){map.removeLayer(comparisonPhoto);comparisonPhoto=null;comparisonPhotoTile=null;return;}
+ try{const response=await fetch(`/result/${tile}/bounds`);if(!response.ok)throw Error('比較写真を読み込めません');const b=await response.json();
+ if(comparisonPhoto)map.removeLayer(comparisonPhoto);
+ comparisonPhoto=L.imageOverlay(`/result/${tile}/photo`,[[b.south,b.west],[b.north,b.east]],{opacity:1,interactive:false,pane:'tilePane'}).addTo(map);
+ comparisonPhotoTile=tile;
+ }catch(e){message.textContent=e.message;}
+}
 async function poll(){try{
  const data=await (await fetch('/status')).json();message.textContent=data.message;
  if(data.status==='running'){draw.disabled=true;button.disabled=true;setTimeout(poll,1500);return;}
@@ -74,7 +83,7 @@ async function poll(){try{
  const visible=data.points.filter(p=>p.decision==='new' && p.outline && p.outline.length>=3);
  const review=data.points.filter(p=>p.decision==='review' && p.outline && p.outline.length>=3);
  document.getElementById('downloads').hidden=visible.length===0;
- [...visible,...review].forEach(p=>{const confirmed=p.decision==='new';const layer=L.polygon(p.outline,{color:confirmed?'#d93025':'#f29900',weight:3,fillOpacity:0.12});layer.bindPopup(`${confirmed?'新築候補':'要確認'} ${p.number}<br>外周の頂点：${p.outline.length}点<br>比較写真：${escapeText(p.old_date)} → ${escapeText(p.new_date)}<br>${escapeText(p.reason)}<br>${escapeText(p.source)}<br><a target="_blank" href="/result/${Number(p.tile)}">AIによる比較画像</a>${confirmed?'<br><a href="/vertices.csv">頂点座標をCSVで保存</a>':''}`).addTo(pins);});
+ [...visible,...review].forEach(p=>{const confirmed=p.decision==='new';const layer=L.polygon(p.outline,{color:confirmed?'#d93025':'#f29900',weight:3,fillOpacity:0.12});layer.bindPopup(`${confirmed?'新築候補':'要確認'} ${p.number}<br>外周の頂点：${p.outline.length}点<br>比較写真：${escapeText(p.old_date)} → ${escapeText(p.new_date)}<br>${escapeText(p.reason)}<br>${escapeText(p.source)}<br><a target="_blank" href="/result/${Number(p.tile)}">AIによる比較画像</a><br><button type="button" onclick="showComparisonPhoto(${Number(p.tile)})">比較写真を重ねる／消す</button>${confirmed?'<br><a href="/vertices.csv">頂点座標をCSVで保存</a>':''}`).addTo(pins);});
  button.disabled=!polygon;
  }catch(e){message.textContent='接続できません';button.disabled=!polygon;}}
 
