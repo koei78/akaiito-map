@@ -8,9 +8,15 @@
   let marker = null;
   let accuracy = null;
   let orientationStarted = false;
+  let starting = false;
+  let activeGeneration = 0;
+  let lastOrientationUpdate = 0;
   const googleMap = location.pathname === '/google';
-  const status = document.getElementById('status');
-  const setStatus = message => { if (status) status.textContent = message; };
+  const status = document.createElement('span');
+  status.setAttribute('role', 'status');
+  status.className = 'location-status';
+  (desktop?.parentElement || mobile?.parentElement || document.body).append(status);
+  const setStatus = message => { status.textContent = message; };
 
   function iconHtml() {
     const arrow = heading === null ? '' : `<span class="location-heading" style="transform:translate(-50%,-50%) rotate(${heading}deg)"></span>`;
@@ -56,15 +62,20 @@
     } catch (_) { /* Heading is optional; GPS remains available. */ }
   }
   function onOrientation(event) {
+    if (watch === null || Date.now() - lastOrientationUpdate < 250) return;
     let direction = Number.isFinite(event.webkitCompassHeading) ? event.webkitCompassHeading : null;
     if (direction === null && event.absolute && Number.isFinite(event.alpha)) {
       direction = (360 - event.alpha + (screen.orientation?.angle || 0)) % 360;
     }
     if (direction === null) return;
+    if (heading !== null && Math.abs(((direction-heading+540)%360)-180) < 5) return;
+    lastOrientationUpdate = Date.now();
     heading = direction;
     if (lastPosition) updateMarker(lastPosition);
   }
   function stop() {
+    activeGeneration++;
+    starting = false;
     if (watch !== null) navigator.geolocation.clearWatch(watch);
     watch = null;
     if (marker) googleMap ? marker.setMap(null) : map.removeLayer(marker);
@@ -75,18 +86,24 @@
     setStatus('現在地の表示を停止しました。');
   }
   async function toggle() {
-    if (watch !== null) { stop(); return; }
+    if (watch !== null || starting) { stop(); return; }
     if (!navigator.geolocation) { setStatus('この端末では位置情報を取得できません。'); return; }
-    await startOrientation();
+    starting = true;
+    const generation = ++activeGeneration;
+    startOrientation();
     setStatus('現在地を取得しています…');
     let first = true;
     watch = navigator.geolocation.watchPosition(position => {
+      if (generation !== activeGeneration) return;
+      starting = false;
       updateMarker(position, first);
       first = false;
       if (desktop) desktop.textContent = '現在地を停止';
       mobile?.classList.add('is-active');
       setStatus(heading === null ? '現在地を表示中です。端末の向きは取得できない場合があります。' : '現在地と端末の向きを表示中です。');
     }, error => {
+      if (generation !== activeGeneration) return;
+      starting = false;
       setStatus(error.code === 1 ? '位置情報の許可が必要です。' : '現在地を取得できませんでした。');
       if (error.code === 1) {
         stop();

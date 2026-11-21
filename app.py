@@ -20,6 +20,7 @@ from flask import Flask, Response, jsonify, request, send_file, render_template,
 import secrets
 import sqlite3
 from shapely.geometry import Polygon, Point, box
+from shapely.ops import unary_union
 from google_usage import reserve_map_load
 import pin_store
 import detection_store
@@ -49,11 +50,26 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=os.environ.get("AKAIITO_HTTPS") == "1")
 pin_store.init_db()
 detection_store.init_db()
+detection_store.backfill_shared()
 base = Path(__file__).resolve().parent
 exe = imagery_executable()
 state = {"status": "idle", "message": "地図上で範囲を選択してください。", "points": []}
 lock = threading.Lock()
+ai_slots = threading.BoundedSemaphore(2)
 result_dir = None
+user_states = {}
+user_result_dirs = {}
+
+
+def get_user_state(user_id):
+    if user_id not in user_states:
+        if state.get('owner_id') == user_id:
+            user_states[user_id] = state
+            if result_dir is not None:
+                user_result_dirs[user_id] = result_dir
+        else:
+            user_states[user_id] = {'owner_id':user_id, 'status':'idle', 'message':'地図上で範囲を選択してください。', 'points':[]}
+    return user_states[user_id]
 
 
 @app.before_request
@@ -292,31 +308,55 @@ def available_dates(bounds):
 def deduplicate(points):
     """大きく重なる外周を同じ建物として扱う。"""
     unique = []
+    buckets = {}
+    large_shapes = set()
+    step = 0.0005
     for point in points:
         try:
             shape = Polygon([(lon, lat) for lat, lon in point["outline"]]).buffer(0)
             if shape.is_empty or shape.area <= 0:
                 continue
+            minx, miny, maxx, maxy = shape.bounds
+            x1, x2, y1, y2 = (math.floor(minx/step), math.floor(maxx/step),
+                              math.floor(miny/step), math.floor(maxy/step))
+            # Unusually large outlines fall back to the conservative full scan.
+            cells = [(x,y) for x in range(x1,x2+1) for y in range(y1,y2+1)] if (x2-x1+1)*(y2-y1+1) <= 256 else []
+            candidates = (large_shapes.union(*(buckets.get(cell, set()) for cell in cells))
+                          if cells else set(range(len(unique))))
             duplicate = False
-            for index, (existing, other) in enumerate(unique):
+            for index in sorted(candidates):
+                existing, other = unique[index]
                 if not shape.intersects(other):
                     continue
                 if shape.intersection(other).area / min(shape.area, other.area) >= 0.6:
                     duplicate = True
                     if point.get("decision") == "new" and existing.get("decision") != "new":
                         unique[index] = (point, shape)
+                        if not cells:
+                            large_shapes.add(index)
+                        for cell in cells:
+                            buckets.setdefault(cell, set()).add(index)
                     break
             if not duplicate:
                 unique.append((point, shape))
+                index = len(unique)-1
+                if not cells:
+                    large_shapes.add(index)
+                for cell in cells:
+                    buckets.setdefault(cell, set()).add(index)
         except (KeyError, TypeError, ValueError):
             continue
     return [point for point, _ in unique]
 
 
-def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
+def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None, job_state=None):
     global result_dir
+    state = job_state if job_state is not None else globals()['state']
     folder = Path(tempfile.mkdtemp(prefix="aerial_"))
-    result_dir = folder
+    if job_state is None:
+        result_dir = folder
+    else:
+        user_result_dirs[state['owner_id']] = folder
     def save_history(status, points, message):
         if run_id is None:
             return
@@ -356,8 +396,9 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
             env = os.environ.copy()
             env.update(PHOTO_IMAGES_DIR=str(part), PHOTO_OUTPUT_DIR=str(part), PHOTO_REASONING_EFFORT=ai_effort,
                        PYTHONIOENCODING="utf-8")
-            run = subprocess.run([sys.executable, str(base / "compare_precise.py")], cwd=base, env=env,
-                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
+            with ai_slots:
+                run = subprocess.run([sys.executable, str(base / "compare_precise.py")], cwd=base, env=env,
+                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
             if run.returncode:
                 detail = "AIの利用上限または混雑（429）。時間をおいて再試行してください" if "429" in run.stderr else run.stderr[-500:]
                 raise RuntimeError("比較失敗: " + detail)
@@ -366,7 +407,6 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
                            "old_date": old.name[12:22], "new_date": new.name[7:17], "outline": json.loads(row["外周"]),
                            "decision": row["判定"], "reason": row["理由"]}
                           for row in csv.DictReader(file)]
-            points = [point for point in points if polygon.covers(Point(point["lon"], point["lat"]))]
             if points:
                 helper = sys.executable
                 try:
@@ -382,15 +422,37 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
         points, failures = [], []
         next_id = len(cells)
         completed = 0
+        skipped = 0
+        prior_areas = []
+        for vertices, entries in detection_store.completed_areas(years, ai_effort, today.isoformat()):
+            try:
+                area = Polygon([(float(lon), float(lat)) for lat, lon in vertices])
+                if area.is_valid and not area.is_empty and area.intersects(polygon):
+                    prior_areas.append((area, entries))
+            except (ValueError, TypeError):
+                continue
         # 再確認を含む AI 判定の同時実行数を抑えて処理を安定させる。
         with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = {pool.submit(process, (index, bounds)): (index, bounds, 0)
-                       for index, bounds in enumerate(cells)}
+            futures = {}
+            for index, bounds in enumerate(cells):
+                cached = detection_store.find_cells(years, ai_effort, today.isoformat(), bounds)
+                requested = polygon.intersection(box(bounds[1],bounds[0],bounds[3],bounds[2]))
+                areas = [(box(b[1],b[0],b[3],b[2]), entries) for b, entries in cached] + prior_areas
+                covers = unary_union([area for area, _ in areas]) if areas else None
+                if covers is not None and covers.covers(requested):
+                    reused = [dict(p, tile=None, reused=True) for _, entries in areas for p in entries
+                              if polygon.covers(Point(p['lon'],p['lat'])) and requested.covers(Point(p['lon'],p['lat']))]
+                    points = deduplicate(points + reused)
+                    skipped += 1
+                else:
+                    futures[pool.submit(process, (index, bounds))] = (index, bounds, 0)
             while futures:
                 future = next(as_completed(futures))
                 index, bounds, depth = futures.pop(future)
                 try:
-                    points = deduplicate(points + future.result())
+                    result = future.result()
+                    detection_store.save_cell(years, ai_effort, today.isoformat(), bounds, result)
+                    points = deduplicate(points + [p for p in result if polygon.covers(Point(p['lon'], p['lat']))])
                     completed += 1
                 except NoImagery as error:
                     if depth < 2:
@@ -407,11 +469,13 @@ def run_comparison(polygon, cells, years, ai_effort="medium", run_id=None):
                     failures.append(f"区画{index + 1}: {error}")
                 for i, point in enumerate(points, 1):
                     point["number"] = i
-                state.update(points=points.copy(), message=f"処理済み {completed}区画、残り {len(futures)}区画（取得不可 {len(failures)}）")
+                state.update(points=points.copy(), message=f"処理済み {completed}区画、再利用 {skipped}区画、残り {len(futures)}区画（取得不可 {len(failures)}）")
+        for i, point in enumerate(points, 1):
+            point['number'] = i
         final_status = "done" if not failures else "partial"
         new_count = sum(point.get("decision") == "new" for point in points)
         review_count = sum(point.get("decision") == "review" for point in points)
-        final_message = f"完了 {completed}区画、新築候補 {new_count}件、要確認 {review_count}件。" + \
+        final_message = f"完了 {completed}区画、再利用 {skipped}区画、新築候補 {new_count}件、要確認 {review_count}件。" + \
                         (f" 取得・処理できなかった範囲: {len(failures)}区画。" + " / ".join(failures[:5]) if failures else "")
         save_history(final_status, points, final_message)
         state.update(status=final_status, points=points, message=final_message)
@@ -459,20 +523,39 @@ def compare():
     except (TypeError, ValueError, KeyError, AttributeError):
         return jsonify(error="交差しない線で範囲を囲んでください。"), 400
     with lock:
-        if state["status"] == "running":
+        job_state = get_user_state(session['user_id'])
+        if job_state["status"] == "running":
             return jsonify(error="比較を実行中です。"), 409
         try:
             run_id = detection_store.start_run(session["user_id"], years, vertices)
         except sqlite3.Error:
             return jsonify(error="検出履歴を準備できませんでした。"), 503
-        state.update(owner_id=session["user_id"], status="running", message=f"{len(cells)}区画を並行処理します。", points=[])
-        threading.Thread(target=run_comparison, args=(polygon, cells, years, ai_effort, run_id), daemon=True).start()
-    return jsonify(state)
+        job_state.update(owner_id=session["user_id"], status="running", message=f"{len(cells)}区画を並行処理します。", points=[])
+        threading.Thread(target=run_comparison, args=(polygon, cells, years, ai_effort, run_id, job_state), daemon=True).start()
+    return jsonify(job_state)
 
 
 @app.get("/api/detections/history")
 def detection_history():
     return jsonify(detection_store.list_runs(session["user_id"]))
+
+
+@app.get('/api/shared-detections')
+def shared_detections():
+    try:
+        south, west, north, east = (float(request.args[key]) for key in ('south','west','north','east'))
+        if not (-85 <= south < north <= 85 and -180 <= west < east <= 180):
+            raise ValueError()
+    except (KeyError, ValueError, TypeError):
+        return jsonify(error='表示範囲を確認してください。'), 400
+    # Skip overly broad views rather than sending thousands of outlines to mobile devices.
+    if north - south > .1 or east - west > .1:
+        return jsonify(points=[], zoom_in=True)
+    points = deduplicate(detection_store.shared_points((south,west,north,east)))
+    for point in points:
+        point.pop('tile', None)
+        point['shared_result'] = True
+    return jsonify(points=points, zoom_in=False)
 
 
 @app.get("/api/detections/history/<int:run_id>")
@@ -505,9 +588,7 @@ def buildings_in_area():
 
 @app.get("/status")
 def status():
-    if state.get("owner_id") != session["user_id"]:
-        return jsonify(status="idle", message="地図上で範囲を選択してください。", points=[])
-    return jsonify(state)
+    return jsonify(get_user_state(session['user_id']))
 
 
 @app.post('/api/shared-routes')
@@ -621,18 +702,20 @@ def delete_route_history(token):
 
 @app.get("/result/<int:tile>")
 def result(tile):
-    if state.get("owner_id") != session["user_id"]:
-        return "結果がありません", 404
-    image = result_dir / str(tile) / "comparison.png" if result_dir else None
+    get_user_state(session['user_id'])
+    folder = user_result_dirs.get(session['user_id'])
+    image = folder / str(tile) / "comparison.png" if folder else None
     if image is None or not image.is_file():
         return "結果がありません", 404
     return send_file(image, mimetype="image/png")
 
 
 def result_photo(tile):
-    if state.get("owner_id") != session["user_id"] or result_dir is None:
+    get_user_state(session['user_id'])
+    result_folder = user_result_dirs.get(session['user_id'])
+    if result_folder is None:
         return None
-    folder = result_dir / str(tile)
+    folder = result_folder / str(tile)
     photos = list(folder.glob("latest_*.tif"))
     return max(photos, key=lambda path: path.stat().st_mtime) if photos else None
 
@@ -676,7 +759,7 @@ def result_photo_image(tile):
 def output_outlines():
     """地図に表示している頂点を返す。中心座標は出力に使わない。"""
     records = []
-    for item in list(state.get("points", [])):
+    for item in list(get_user_state(session['user_id']).get("points", [])):
         if item.get("decision") != "new":
             continue
         outline = item.get("outline") or []
@@ -694,7 +777,7 @@ def output_outlines():
 
 @app.get("/vertices.csv")
 def vertices_csv():
-    if state.get("owner_id") != session["user_id"]:
+    if get_user_state(session['user_id'])['status'] == 'idle':
         return "結果がありません", 404
     output = io.StringIO(newline="")
     writer = csv.writer(output)
@@ -710,7 +793,7 @@ def vertices_csv():
 
 @app.get("/outlines.geojson")
 def outlines_geojson():
-    if state.get("owner_id") != session["user_id"]:
+    if get_user_state(session['user_id'])['status'] == 'idle':
         return "結果がありません", 404
     features = []
     for item, coords in output_outlines():

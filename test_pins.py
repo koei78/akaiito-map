@@ -149,10 +149,52 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
                 app.state.update(owner_id=alice_id, status="done", message="候補1件", points=points)
                 self.assertEqual(bob.get("/status").json["points"], [])
                 self.assertEqual(bob.get("/outlines.geojson").status_code, 404)
+
                 self.assertEqual(alice.get("/status").json["points"], points)
             finally:
                 app.state.clear()
                 app.state.update(previous_state)
+
+        def test_shared_detections_and_independent_comparison_jobs(self):
+            import detection_store
+            from unittest.mock import patch
+            alice, a = self.client('sharedcomparealice')
+            bob, b = self.client('sharedcomparebob')
+            owner = alice.get('/api/me').json['id']
+            outline = [[35.5,137.8],[35.5,137.8001],[35.5001,137.8001],[35.5001,137.8]]
+            run = detection_store.start_run(owner, 15, outline)
+            detection_store.finish_run(run, 'done', [{'lat':35.50005,'lon':137.80005,'outline':outline,'decision':'new','number':1}], 'done')
+            results = bob.get('/api/shared-detections?south=35.49&west=137.79&north=35.51&east=137.81').json
+            self.assertTrue(any(abs(p['lat']-35.50005)<.000001 for p in results['points']))
+            with patch.object(app, 'exe') as executable, patch.object(app.threading, 'Thread'):
+                executable.is_file.return_value = True
+                self.assertEqual(alice.post('/compare', json={'polygon':outline,'years':15}, headers=a).status_code, 200)
+                self.assertEqual(bob.post('/compare', json={'polygon':outline,'years':15}, headers=b).status_code, 200)
+                self.assertEqual(alice.get('/status').json['status'], 'running')
+                self.assertEqual(bob.get('/status').json['status'], 'running')
+                self.assertEqual(alice.post('/compare', json={'polygon':outline,'years':15}, headers=a).status_code, 409)
+
+        def test_completed_cell_is_reused_for_same_conditions(self):
+            import detection_store
+            from datetime import date
+            from shapely.geometry import Polygon
+            from unittest.mock import patch
+            alice, _ = self.client('cachecomparealice')
+            owner = alice.get('/api/me').json['id']
+            bounds = (35.5,137.8,35.501,137.801)
+            outline = [[35.5002,137.8002],[35.5002,137.8004],[35.5004,137.8004],[35.5004,137.8002]]
+            point = {'lat':35.5003,'lon':137.8003,'outline':outline,'decision':'new'}
+            detection_store.save_cell(15, 'medium', date.today().isoformat(), bounds, [point])
+            job = {'owner_id':owner,'status':'running','points':[]}
+            polygon = Polygon([(137.8001,35.5001),(137.8009,35.5001),(137.8009,35.5009),(137.8001,35.5009)])
+            run = detection_store.start_run(owner,15,outline)
+            with patch.object(app, 'available_dates', side_effect=AssertionError('should reuse')):
+                app.run_comparison(polygon,[bounds],15,'medium',run,job)
+            self.assertEqual(job['status'],'done')
+            self.assertIn('再利用 1区画',job['message'])
+            self.assertEqual(len(job['points']),1)
+            self.assertTrue(job['points'][0]['reused'])
+            self.assertEqual(detection_store.find_cells(14,'medium',date.today().isoformat(),bounds),[])
 
         def test_duplicate_detection_prefers_reconfirmed_result(self):
             outline = [[35.5, 137.8], [35.5, 137.801], [35.501, 137.801], [35.501, 137.8]]

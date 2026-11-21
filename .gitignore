@@ -50,6 +50,7 @@
 !/static/mobile-map.js
 !/static/detection-history.js
 !/static/building-checks.js
+!/static/shared-detections.js
 !/static/detection-history.css
 !/static/location-control.js
 !/static/mobile-refresh.css
