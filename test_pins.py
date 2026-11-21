@@ -85,6 +85,7 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             token = saved.json['token']
             self.assertEqual(len(alice.get('/api/route-history').json), 1)
             self.assertEqual(bob.get('/api/shared-routes/' + token).status_code, 404)
+
             self.assertEqual(bob.get('/api/route-history').json, [])
             self.assertEqual(bob.post('/api/route-history/' + token + '/share', headers=bob_headers).status_code, 404)
             self.assertEqual(alice.post('/api/route-history/' + token + '/share', headers=headers).status_code, 200)
@@ -95,6 +96,17 @@ with tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)) as _db_dir:
             self.assertEqual(len(alice.get('/api/route-history').json), 1)
             self.assertEqual(alice.delete('/api/route-history/' + token, headers=headers).status_code, 200)
             self.assertEqual(bob.get('/api/shared-routes/' + token).status_code, 404)
+
+        def test_checked_building_persists_per_user_and_can_be_undone(self):
+            alice, a = self.client('checkedalice')
+            bob, b = self.client('checkedbob')
+            key = '35.5000000,137.8000000'
+            self.assertEqual(alice.put('/api/checked-buildings', json={'key':key, 'checked':True}, headers=a).status_code, 200)
+            self.assertEqual(alice.get('/api/checked-buildings').json, [key])
+            self.assertEqual(bob.get('/api/checked-buildings').json, [])
+            self.assertEqual(bob.put('/api/checked-buildings', json={'key':key, 'checked':'yes'}, headers=b).status_code, 400)
+            self.assertEqual(alice.put('/api/checked-buildings', json={'key':key, 'checked':False}, headers=a).status_code, 200)
+            self.assertEqual(alice.get('/api/checked-buildings').json, [])
 
         def test_shared_pin_display_setting_is_per_account_and_does_not_share_private_pins(self):
             alice, a = self.client("sharedsettingalice")

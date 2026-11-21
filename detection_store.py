@@ -21,6 +21,12 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS detection_runs_owner
                 ON detection_runs(owner_id, id DESC);
+            CREATE TABLE IF NOT EXISTS checked_buildings (
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                location_key TEXT NOT NULL,
+                checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, location_key)
+            );
         """)
 
 

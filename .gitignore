@@ -49,6 +49,7 @@
 !/static/auth.css
 !/static/mobile-map.js
 !/static/detection-history.js
+!/static/building-checks.js
 !/static/detection-history.css
 !/static/location-control.js
 !/static/mobile-refresh.css

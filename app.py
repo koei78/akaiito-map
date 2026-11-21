@@ -576,6 +576,30 @@ def route_history():
                     for r in rows])
 
 
+@app.get('/api/checked-buildings')
+def checked_buildings():
+    with pin_store.connect() as db:
+        rows = db.execute('SELECT location_key FROM checked_buildings WHERE user_id=?', (session['user_id'],)).fetchall()
+    return jsonify([row['location_key'] for row in rows])
+
+
+@app.put('/api/checked-buildings')
+def set_checked_building():
+    data = request.get_json(silent=True) or {}
+    key, checked = data.get('key'), data.get('checked')
+    if not isinstance(key, str) or not re.fullmatch(r'-?\d{1,2}\.\d{7},-?\d{1,3}\.\d{7}', key) or not isinstance(checked, bool):
+        return jsonify(error='建物の位置を確認してください。'), 400
+    lat, lon = map(float, key.split(','))
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return jsonify(error='建物の位置を確認してください。'), 400
+    with pin_store.connect() as db:
+        if checked:
+            db.execute('INSERT OR IGNORE INTO checked_buildings(user_id,location_key) VALUES (?,?)', (session['user_id'], key))
+        else:
+            db.execute('DELETE FROM checked_buildings WHERE user_id=? AND location_key=?', (session['user_id'], key))
+    return jsonify(checked=checked)
+
+
 @app.post('/api/route-history/<token>/share')
 def share_route(token):
     with pin_store.connect() as db:

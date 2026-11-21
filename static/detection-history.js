@@ -23,6 +23,7 @@
   const mobileTrigger = document.getElementById('rail-history');
   if (mobileTrigger) mobileTrigger.onclick = () => openList();
   let layers = [];
+  let checkSubscriptions = [];
 
   function clearOverlay() {
     for (const layer of layers) {
@@ -30,6 +31,8 @@
       else map.removeLayer(layer);
     }
     layers = [];
+    checkSubscriptions.forEach(unsubscribe => unsubscribe());
+    checkSubscriptions = [];
     active.hidden = true;
     window.dispatchEvent(new CustomEvent('route-history-points', {detail:null}));
   }
@@ -118,17 +121,19 @@
       if (!valid) continue;
       coords.push(...outline);
       const info = document.createElement('div');
-      addText(info, 'strong', `${point.decision === 'review' ? '要確認' : '新築候補'} ${point.number || ''}`);
+      addText(info, 'strong', `${point.decision === 'review' ? '要確認' : '新築候補（タップで確認済み切替）'} ${point.number || ''}`);
       addText(info, 'div', `撮影日: ${point.old_date || '不明'} → ${point.new_date || '不明'}`);
       if (point.reason) addText(info, 'div', point.reason);
       const color = point.decision === 'review' ? '#f29900' : '#d93025';
       if (isGoogle) {
         const layer = new google.maps.Polygon({map, paths:outline.map(pair => ({lat:pair[0], lng:pair[1]})), strokeColor:color, strokeWeight:3, fillColor:color, fillOpacity:.16});
+        if (point.decision === 'new') checkSubscriptions.push(buildingChecks.register(point, checked => layer.setOptions({strokeColor:checked?'#1a73e8':color, fillColor:checked?'#1a73e8':color})));
         const popup = new google.maps.InfoWindow({content:info});
-        layer.addListener('click', event => {popup.setPosition(event.latLng);popup.open(map);});
+        layer.addListener('click', event => {if(point.decision === 'new')buildingChecks.toggle(point);popup.setPosition(event.latLng);popup.open(map);});
         layers.push(layer);
       } else {
         const layer = L.polygon(outline, {color,weight:3,fillOpacity:.16}).addTo(map);
+        if (point.decision === 'new') {checkSubscriptions.push(buildingChecks.register(point, checked => layer.setStyle({color:checked?'#1a73e8':color})));layer.on('click',()=>buildingChecks.toggle(point));}
         layer.bindPopup(info);
         layers.push(layer);
       }
